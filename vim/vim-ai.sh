@@ -1,8 +1,8 @@
 declare -A VIM_AI_MODELS
 VIM_AI_MODELS[gemini]="google/gemini-2.5-flash"
 VIM_AI_MODELS[qwen]="qwen/qwen3-30b-a3b:free"
-VIM_AI_MODELS[gpt]="openai/gpt-4.1"
-VIM_AI_MODELS[gpt-mini]="openai/o4-mini-high"
+VIM_AI_MODELS[gpt]="openai/gpt-5.1"
+VIM_AI_MODELS[gpt-mini]="openai/5.1-mini"
 VIM_AI_MODELS[gpt-o4]="openai/o4-mini-high"
 VIM_AI_MODELS[gpt-o3]="openai/o3-mini-high"
 VIM_AI_MODELS[deep]="tngtech/deepseek-r1t-chimera:free"
