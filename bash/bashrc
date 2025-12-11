@@ -24,7 +24,6 @@ personals=$(find $CONF -type f -name "*.ignore")
 for p in ${personals[@]}; do
     source $p
 done
-source $CONF_GIT/git.sh
 source $CONF_VIM/vim-ai.sh
 
 # COMPLETION

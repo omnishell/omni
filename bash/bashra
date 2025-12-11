@@ -18,9 +18,3 @@
     alias vimrc="vim $VIM/vimrc"
     alias vimrk="vim $VIM/vimrk"
     alias vimrp="vim $VIM/vimrp"
-## "g" as alias for "git" 
-## Note: 
-##    completion will work only if added "___git_complete g __git_main"
-##    at the end of git completion script
-    alias g="git"
-    
