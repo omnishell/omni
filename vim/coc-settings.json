@@ -2,7 +2,7 @@
     "diagnostic.level": "error",
     "diagnostic.refreshOnInsertMode": true,
     "diagnostic.format": "%message",
-    "pullDiagnostic.onChange": false,
+    "pullDiagnostic.onChange": true,
     "pullDiagnostic.onSave": true,
     "colors.enable": true,
     "suggest.acceptSuggestionOnCommitCharacter": true,
@@ -15,10 +15,21 @@
     "suggest.removeDuplicateItems": true,
     "suggest.languageSourcePriority": 0,
     "python.analysis.logLevel": "Warning",
-    "python.linting.enabled": false,
+    "python.linting.enabled": true,
+    "pyright.disableDiagnostics": false,
+    "python.analysis.diagnosticMode": "openFilesOnly",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingImports": "error",
+        "reportMissingModuleSource": "error",
+        "reportImportCycles": "error",
+        "reportUnusedImport": "error",
+        "reportUnusedFunction": "error",
+        "reportDuplicateImport": "error",
+        "reportUndefinedVariable": "error"
+    },
     "python.analysis.typeCheckingMode": "off",
-    "python.analysis.autoImportCompletions": false,
-    "pyright.completion.importSupport": false,
+    "python.analysis.autoImportCompletions": true,
+    "pyright.completion.importSupport": true,
     "pyright.disableTaggedHints": true,
     "pyright.inlayHints.variableTypes": false,
     "pyright.inlayHints.functionReturnTypes": false,
@@ -31,17 +42,6 @@
     "html.format.enable": true,
     "html.hover.documentation": true,
     "html.hover.references": true,
-    "css.hover.references": true, 
-    "css.hover.documentation": true,
-    "css.format.braceStyle": "expand",
-    "coc-class-css.languages": [
-        "html",
-        "jinja",
-        "jinja.html"
-    ],
-    "coc-class-css.cssRoots": [
-        "/home/yx/files/dev/vor/controller/builder/src/static/css/inline.css"
-    ],
     "snippets.ultisnips.directories": [          
         "UltiSnips",
         "/home/yx/conf/vim/snippets"
