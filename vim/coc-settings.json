@@ -2,7 +2,7 @@
     "diagnostic.level": "error",
     "diagnostic.refreshOnInsertMode": true,
     "diagnostic.format": "%message",
-    "pullDiagnostic.onChange": true,
+    "pullDiagnostic.onChange": false,
     "pullDiagnostic.onSave": true,
     "colors.enable": true,
     "suggest.acceptSuggestionOnCommitCharacter": true,

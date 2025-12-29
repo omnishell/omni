@@ -9,67 +9,37 @@ except Exception as e:
     raise ${1:ClassErr}(e)
 endsnippet
 
-snippet except "except" b:
-except Exception as e:
-    raise ${1:Class}Err(e)
-endsnippet
-
 snippet exc "except" b:
 except Exception as e:
     raise ${1:Class}Err(e)
 endsnippet
 
-snippet __init "__init__" b:
-def __init__(self, ${1:var}):
-    self.$1 = $1 
-endsnippet
-
-snippet newerr "new error class" b
-class ${1:Class}Err(Exception):
-    pass
-endsnippet
-
-snippet @st "@staticmethod" b
-@staticmethod
-$0
-endsnippet
-
-snippet @cls "@classmethod" b
-@classmethod
-$0
+snippet err "new error class" b
+class ${1:Class}Err(Exception): pass
 endsnippet
 
 snippet log "log" b
 log.${1:log_level}(f"$0")
 endsnippet
-
-snippet sse "sse" b
-sse.${1:sse_level}(f"$0")
-endsnippet
     
 snippet debug "debug" b
 log.debug(f"$0")
-sse.debug(f" ")
 endsnippet
 
 snippet err "error" b
 log.error(f"$0")
-sse.error(f" ")
 endsnippet
 
 snippet done "done" b
 log.done(f"$0")
-sse.done(f" ")
 endsnippet
 
 snippet warn "warning" b
 log.warning(f"$0")
-sse.warning(f" ")
 endsnippet
 
 snippet info "info" b
 log.info(f"$0")
-sse.info(f" ")
 endsnippet
 
 snippet ins "isinstance" w
@@ -88,22 +58,6 @@ snippet pf "printf" b
 print(f"$0")
 endsnippet
 
-snippet model "new model" w
-${1: Name}Model = Model(
-    $0
-)
-endsnippet
-
-snippet emodel "new exact model" w
-${1: Name}Model = ExactModel(
-    $0
-)
-endsnippet
-
-snippet t "typed" b
-@typed
-endsnippet
-
 snippet " "docstring" b
 """ 
 endsnippet
@@ -119,19 +73,7 @@ f"$0"
 endsnippet
 
 snippet "j "jinja string" w
-"""jinja
+f"""jinja
 $0
 """
-endsnippet
-
-snippet header "<header>" w 
-<header>
-$0
-</header>
-endsnippet
-
-snippet div "<div>" w
-<div>
-$0
-</div>
 endsnippet

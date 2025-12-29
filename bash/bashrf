@@ -1,6 +1,5 @@
 #! /bin/bash
 
-# VIM FUNCTION
 function vim() {
     declare -A FILETYPE_FUNCTIONS=(
         ["py"]="vim_py"
@@ -79,37 +78,6 @@ function vim() {
         fi
     fi
 } 
-
-# BC FUNCTION
-function bc(){
-    echo "Welcome to bc calculator. Type \"quit\" to exit."
-    command bc -q -i -l $@
-}
-# RANDOM FUNCTION
-function random(){
-    var=$(tr -dc A-Za-z0-9 </dev/urandom | head -c $1; echo)
-    echo $var
-    echo $var | xclip -selection clipboard
-}  
- 
-# LOCALHOST FUNCTION
-function localhost(){
-    firefox localhost:$1/$2 & disown
-}
-alias lh="localhost"
-
-# MON FUNCTION
-function mon(){
-    if [[ -z "$1" ]]; then
-        mon left
-    elif [[ "$1" == "right" ]] ||
-         [[ "$1" == "r" ]]; then
-        xrandr --output eDP-1 --auto --output HDMI-1 --auto --right-of eDP-1
-    elif [[ "$1" == "left" ]] ||
-         [[ "$1" == "l" ]]; then
-        xrandr --output eDP-1 --auto --output HDMI-1 --auto --left-of eDP-1
-    fi
-}
 
 # BIB FUNCTION
 function bib() {

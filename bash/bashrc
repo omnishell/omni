@@ -12,7 +12,8 @@ export CONF=${CONF_BASH%/*}
 export CONF_VIM=$CONF/vim
 export CONF_GIT=$CONF/git
 export COMPL=$CONF_BASH/compl
-export BIN=$CONF/bin
+export BIN=$HOME/bin
+export TMP=$HOME/tmp
 
 # PATH
 export PATH=$PATH:$BIN
