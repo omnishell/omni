@@ -1,0 +1,25 @@
+#! /bin/bash
+
+function __init() {
+
+BIN="$1"
+SEC="$2"
+TMP="$3"
+
+export CONF=$(dirname $(readlink -f ${BASH_SOURCE[0]}))
+export CONF_SH=$CONF/sh
+export CONF_ENV=$CONF/env
+export CONF_TOOLS=$CONF/tools
+
+[ -n $BIN ] && export BIN=$BIN
+[ -n $SEC ] && export SEC=$SEC
+[ -n $TMP ] && export TMP=$TMP
+
+source $CONF_SH/conf/builtins
+source $CONF_SH/conf/exports
+source $CONF_SH/conf/load
+
+__builtins
+__exports $BIN $TMP $SEC
+__load
+}

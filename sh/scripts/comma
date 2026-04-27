@@ -1,0 +1,9 @@
+#! /bin/bash
+
+__comma(){
+    comma(){
+        
+
+    }
+    alias ,='comma'
+}

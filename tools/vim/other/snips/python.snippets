@@ -1,0 +1,83 @@
+snippet def "def" b
+def ${1:name}($0):
+endsnippet
+
+snippet try "try" b:
+try:
+    $0
+except Exception as e:
+    raise ${1:ClassErr}(e)
+endsnippet
+
+snippet exc "exception" b:
+except Exception as e:
+    raise ${1:Class}Err(e)
+endsnippet
+
+snippet tray "try api" b:
+try:
+    $0
+except Exception as e:
+    return response.failure(code=500, message=str(e))
+endsnippet
+
+snippet exac "api exception" b:
+except Exception as e:
+    return response.failure(code=500, message=str(e))
+endsnippet
+
+snippet suc "success" b:
+return response.success(data=${1:data})
+endsnippet
+
+snippet err "new error class" b
+class ${1:Class}Err(Exception): pass
+endsnippet
+    
+snippet debug "debug" b
+log.debug(f"$0")
+endsnippet
+
+snippet err "error" b
+log.error(f"$0")
+endsnippet
+
+snippet done "done" b
+log.done(f"$0")
+endsnippet
+
+snippet warn "warning" b
+log.warning(f"$0")
+endsnippet
+
+snippet info "info" b
+log.info(f"$0")
+endsnippet
+
+snippet p "print" b
+print($0)
+endsnippet
+
+snippet pf "printf" b
+print(f"$0")
+endsnippet
+
+snippet " "docstring" b
+""" 
+endsnippet
+
+snippet "" "docstring" b
+"""
+$0
+"""
+endsnippet
+
+snippet f "f-string" w
+f"$0"
+endsnippet
+
+snippet j "jinja string" w
+f"""jinja
+$0
+"""
+endsnippet

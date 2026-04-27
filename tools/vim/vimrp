@@ -1,0 +1,86 @@
+#! /usr/bin/env vim
+
+" PLUGIN config
+    call plug#begin('~/.vim/plugged')
+"> Autocompletion
+    Plug 'neoclide/coc.nvim', {'branch': 'release'}
+    Plug 'maralla/completor.vim', { 'for': 'aichat' }
+"> Snippets
+    Plug 'SirVer/ultisnips' 
+"> Basic Stuff
+    Plug 'skywind3000/asyncrun.vim'
+    Plug 'Yggdroot/indentLine'
+"> Other
+    Plug 'madox2/vim-ai'
+    call plug#end()
+"> Automatically install missing plugins
+    autocmd VimEnter *
+  \  if len(filter(values(g:plugs), '!isdirectory(v:val.dir)'))
+  \|   PlugInstall --sync | q
+  \| endif
+
+" ASYNCRUN
+"> '!' to open AsyncRun. ']o' to open the logs window
+    nnoremap ! :AsyncRun
+    nnoremap <leader>o :copen<cr>
+    inoremap <leader>o <esc>:copen<cr>
+
+" INDENTLINE
+">> disabling in markdown
+    let g:indentLine_fileTypeExclude = ['markdown', 'md']
+    let g:indentLine_bufTypeExclude = ['help', 'terminal']
+">> avoid conflict with links conceal
+    let g:indentLine_concealcursor=""
+    let g:indentLine_conceallevel=2
+">> ']i' to toggle indentline
+    inoremap <leader>i <esc>:IndentLinesToggle<cr>:startinsert<cr>
+    nnoremap <leader>i :IndentLinesToggle<cr>:startinsert<cr>
+
+
+" COC
+">> set completion keys
+    inoremap <expr> <down> coc#pum#visible() ? coc#pum#next(1) : (pumvisible() ? "\<lt>down>" : "\<lt>c-o>gj")
+    inoremap <expr> <up> coc#pum#visible() ? coc#pum#prev(1) : (pumvisible() ? "\<lt>up>" : "\<lt>c-o>gk")
+    inoremap <expr> <tab> coc#pum#visible() ? coc#pum#insert() : "\<tab>"
+    inoremap <expr> <cr> coc#pum#visible() ? coc#pum#insert() : "\<cr>"
+">> 'ctrl+d' to show documentation
+    function! ShowDocumentation()
+        if CocAction('hasProvider', 'hover')
+            call CocAction('doHover')
+ s           sleep 1
+            startinsert
+        endif
+    endfunction
+    inoremap <silent> <c-d> <esc>:call ShowDocumentation()<cr>
+">> '<leader>d' to go to definition
+    nnoremap <leader>d :rightbelow call CocActionAsync('jumpDefinition', 'vsplit')<CR>:vert resize 80<CR>
+    inoremap <leader>d <esc>:rightbelow call CocActionAsync('jumpDefinition', 'vsplit')<CR>:vert resize 80<CR>
+" >> 'ctrl-p' to open preview in markdown file
+    autocmd FileType markdown inoremap <c-p> <esc>:CocCommand markdown-preview-enhanced.openPreview<cr>i 
+
+" VIM-AI
+">> setting the token file
+    let g:vim_ai_token_file_path = expand($SEC . '/openrouter.token')
+">> 'ctrl+g' to ask a question
+    inoremap <c-g> <esc>:AIChat<cr> 
+    nnoremap <c-g> :AIChat
+    vnoremap <c-g> :AIChat
+">> add syntax highlight
+    autocmd Filetype aichat call SyntaxRegion('```{ft}', '```')
+
+augroup KillCocBracket
+  autocmd!
+  autocmd InsertEnter * silent! iunmap ]
+augroup END
+
+augroup CursorPosition
+    autocmd!
+    autocmd BufReadPost * call RestoreCursorPosition()
+augroup END
+
+augroup MarkdownMappings
+    autocmd!
+    autocmd FileType markdown call s:MarkdownMaps()
+augroup END
+
+

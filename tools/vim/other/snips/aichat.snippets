@@ -1,0 +1,92 @@
+snippet " "preformatted display" b 
+\`\`\`
+endsnippet
+
+snippet "b "preformatted display" b 
+\`\`\`bash
+$0  
+\`\`\`
+endsnippet
+
+snippet "py "preformatted display" b 
+\`\`\`python
+$0
+\`\`\`
+endsnippet
+
+snippet "js "preformatted display" b
+\`\`\`js
+$0
+\`\`\`
+endsnippet
+
+snippet inc
+>>> include
+endsnippet
+
+snippet user
+>>> user
+endsnippet
+
+priority 10
+extends typedthon
+
+snippet "\$(?P<var>[A-Za-z_]+[A-Za-z0-9_]*)" "Expand Environment Variable" ri
+`!p
+import os
+var_name = match.group('var')
+snip.rv = os.environ.get(var_name, '!!{} is not set!!'.format(var_name))
+`
+endsnippet
+
+snippet typed "typed"
+/home/yx/files/dev/prj/typed/typed/typed/mods/**/*
+endsnippet
+
+snippet model "model"
+/home/yx/files/dev/prj/typed/model/model/mods/**/*
+endsnippet
+
+snippet api "api"
+/home/yx/files/dev/prj/typed/api/api/**/*
+endsnippet
+
+snippet search "search"
+/home/yx/files/dev/prj/typed/search/search/**/*
+endsnippet
+
+snippet cli "cli"
+/home/yx/files/dev/prj/typed/cli/cli/**/*
+endsnippet
+
+snippet utils "utils"
+/home/yx/files/dev/prj/typed/utils/utils/mods/**/*
+endsnippet
+
+snippet comp "comp"
+/home/yx/files/dev/prj/typed/comp/comp/**/*
+endsnippet
+
+snippet manager "manager"
+/home/yx/files/dev/prj/typed/manager/manager/**/*
+endsnippet
+
+snippet grid "grid"
+/home/yx/files/dev/prj/typed/grid/grid/**/*
+endsnippet
+
+snippet builder "builder"
+/home/yx/files/dev/prj/typed/builder/builder/**/*
+endsnippet
+
+snippet sdk "sdk"
+/home/yx/files/dev/vor/sdk/sdk/**/*
+endsnippet
+
+snippet inners "inners"
+/home/yx/files/dev/vor/inners/inners/**/*
+endsnippet
+
+snippet infra "infra"
+/home/yx/files/dev/vor/infra/**/*
+endsnippet

@@ -1,0 +1,43 @@
+#! /bin/bash
+
+alias shutdown="shutdown -h now"
+alias restart="xrdb $HOME/.Xresources"
+alias pt="setxkbmap -model abnt2 -layout br -variant abnt2"
+alias en="setxkbmap -layout us -variant intl"
+alias src="source $CONF/init"
+
+bc() {
+    if ! command -v bc > /dev/null 2>&1; then
+        echo "Error: missing bc."
+        exit 1
+    fi
+    if [ $# -eq 0 ]; then
+        echo "Welcome to bc calculator. Type \"quit\" to exit."
+        command bc -q -i -l
+    else
+        local expression=""
+        for arg in "$@"; do
+            if [ -n "$expression" ]; then
+                expression="$expression $arg"
+            else
+                expression="$arg"
+            fi
+        done
+        
+        if [ -f "$1" ] && [ $# -eq 1 ]; then
+            command bc -l "$@"
+        else
+            echo "$expression" | command bc -l
+        fi
+    fi
+}
+
+random(){
+    var=$(tr -dc A-Za-z0-9 </dev/urandom | head -c $1)
+    echo -n $var | xclip -selection clipboard
+}
+
+localhost(){
+    ${BROWSER:-firefox} localhost:$1/$2 & disown
+}
+

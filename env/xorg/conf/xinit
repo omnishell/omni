@@ -1,0 +1,27 @@
+#! /bin/bash
+
+# starting xterm
+    xrdb -merge $HOME/.Xresources
+    xterm &
+# starting networkmanager 
+    NetworkManager
+## starting pulseaudio
+    pulseaudio --start
+# fixing keyboard layout
+    setxkbmap -layout us -variant intl
+# fixing keyboard speed
+    xset r rate 130 35
+# fixing touchpad
+   touchpad=$(xinput list --id-only "SYNA3602:00 0911:5288 Touchpad")
+   xinput set-prop $touchpad "libinput Tapping Button Mapping Enabled" 0 1 
+# disabling ipv6
+    sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+    sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+# avoind sleep/suspend
+    xset s off
+    xset -dpms
+    xset s noblank
+# starting i3
+    exec i3 -c $HOME/.config/i3/config
+# source $HOME/.bashrc
+    source $HOME/.bashrc

@@ -1,0 +1,156 @@
+#!/bin/bash
+
+__builtins() {
+    local BUILTINS="has clip cd back home ls lf ld la laf lad ln mf md rm mv cp"
+
+    __has() {
+        for i in "$@"; do
+            ! command -v "$i" > /dev/null 2>&1 && return 1
+        done
+        return 0
+    }
+
+    __clip() {
+        if __has xclip; then
+            xclip -selection clipboard && return 0
+        elif __has xsel; then
+            xsel -clipboard && return 0
+        fi
+        return 1
+    }
+
+    __cd() {
+        command pushd -- "$@" > /dev/null 2>&1
+    }
+
+    __back() {
+        command popd > /dev/null 2>&1 || return
+    }
+
+    __home() {
+        __cd "$HOME" && __ls
+    }
+
+    __ls() {
+        command ls --group-directories-first --color=always "$@"
+    }
+
+    __la() {
+        command ls --almost-all --group-directories-first --color=always "$@"
+    }
+
+    __lf() {
+        local target="${1:-.}"
+        (
+            cd "$target" || return
+            find . -maxdepth 1 -mindepth 1 \
+                 -type f ! -name '.*' \
+                 -printf '%f\0' \
+            | xargs -0r ls --group-directories-first --color=always
+        )
+    }
+
+    __ld() {
+        local target="${1:-.}"
+        (
+            cd "$target" || return
+            find . -maxdepth 1 -mindepth 1 \
+                 -type d ! -name '.*' \
+                 -printf '%f\0' \
+            | xargs -0r ls --group-directories-first --color=always
+        )
+    }
+
+    __laf() {
+        local target="${1:-.}"
+        (
+            cd "$target" || return
+            find . -maxdepth 1 -mindepth 1 -type f -printf '%f\0' \
+            | xargs -0r ls --group-directories-first --color=always
+        )
+    }
+
+    __lad() {
+        local target="${1:-.}"
+        (
+            cd "$target" || return
+            find . -maxdepth 1 -mindepth 1 -type d -printf '%f\0' \
+            | xargs -0r ls --group-directories-first --color=always
+        )
+    }
+
+    __ln() {
+        command ln -sf "$@"
+    }
+
+    __md() {
+        command mkdir -p "$@"
+    }
+
+    __mf() {
+        for i in "$@"; do
+            local dir
+            dir=$(dirname "$i")
+            [ ! -d "$dir" ] && __md "$dir"
+            command touch "$i"
+        done
+    }
+
+    __cp() {
+        if [[ $# -eq 0 ]]; then
+            __clip
+        elif [[ $# -eq 1 ]]; then
+            if [[ -f "$1" ]]; then
+                cat "$1" | __clip
+            fi
+        else
+            local target="${@: -1}"
+            local dir
+            if [[ -d "$target" ]]; then
+                dir="$target"
+            else
+                dir=$(dirname "$target")
+            fi
+            __md "$dir"
+            command cp -r "$@"
+        fi
+    }
+
+    __rm() {
+        command rm -rf "$@"
+    }
+
+    __mv() {
+        local target="${@: -1}"
+        local dir
+        if [[ -d "$target" ]]; then
+            dir="$target"
+        else
+            dir=$(dirname "$target")
+        fi
+        __md "$dir"
+        command mv "$@"
+    }
+
+    for x in $BUILTINS; do
+            local __x="__${x}"
+            local __X="__${x^^}"
+            
+            unalias -- "$x" >/dev/null 2>&1
+
+            eval "
+                function $x {
+                    if [ -n \"\${$__X:-}\" ]; then
+                        \${$__X} \"\$@\"
+                    else
+                        $__x \"\$@\"
+                    fi
+                }
+            "
+        done
+
+        alias -- -="back"
+        alias -- --="home" 
+}
+
+__builtins

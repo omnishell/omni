@@ -1,0 +1,66 @@
+#! /bin/bash
+
+source ${BASH_SOURCE%/*}/z
+
+__dot() {
+    local __ls="${__LS:-ls}"
+    local __la="${__LS_ALL:-ls -a}"
+    local __open="${__OPEN:-vim}"
+
+    __cd__() {
+        pushd -- "$1" > /dev/null 2>&1
+    }
+
+    __back__() {
+        popd > /dev/null 2>&1 || return
+    }
+
+    __cd() {
+        if [[ -n "$__CD" ]]; then
+            "$__CD" "$@"
+        else
+            __cd__ "$@"
+        fi
+    }
+
+    __home() {
+        __cd "$HOME" && __ls
+    }
+
+    case "$1" in
+        "")
+            __ls ;;
+        "-"|"...")
+            shift && __back && __ls ;;
+        "..")
+            shift && __cd .. && __ls ;;
+        ".")
+            shift && __home ;;
+        ",")
+            shift && __la "$@" ;; 
+        
+        *)
+            if [[ -d "$1" ]]; then
+                 "$1"
+                shift
+                _dot_ls "$@"
+            elif [[ -f "$1" ]]; then
+                _dot_open "$1"
+            else
+                _dot_ls "$@"
+            fi
+            ;;
+    esac
+
+    alias .='dot'
+    alias ,='z'
+    alias ..="dot .."
+    alias ,.='dot ,'
+    alias .,='dot ,'
+    alias .,f='dot ,f'
+    alias ,.f='dot ,f'
+    alias .,d='dot ,d'
+    alias ,.d='dot ,d'
+    alias .f='_dot_lsf'
+    alias .d='_dot_lsd'
+}

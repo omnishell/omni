@@ -1,0 +1,1 @@
+local open="${__OPEN:-vim}"
