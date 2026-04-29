@@ -1,0 +1,32 @@
+#! /bin/bash
+
+__global() {
+    global() {
+        local name="$1" path="" t_env="$ENV"
+        shift
+        
+        while [[ $# -gt 0 ]]; do
+            case "$1" in 
+                --path=*) path="${1#*=}" ;; --path) path="$2"; shift ;; 
+                --env=*)  t_env="${1#*=}" ;; --env) t_env="$2"; shift ;;
+            esac
+            shift
+        done
+        
+        [[ -z "$t_env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
+        
+        # If no path is provided, dynamically fetch it using the helper
+        if [[ -z "$path" && -n "$name" ]]; then
+            path="$(__get global "$name" --env "$t_env")"
+            [[ $? -ne 0 ]] && return 1 # __get already prints the error message
+        fi
+
+        if [[ -f "$path" ]]; then
+            source "$path"
+            type "__${name}" &>/dev/null && eval "__${name}"
+        else
+            echo "Error: global file '$path' not found for '$name'." >&2
+            return 1
+        fi
+    }
+}

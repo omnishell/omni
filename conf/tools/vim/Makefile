@@ -1,4 +1,4 @@
-HERE         ?= ${CONF_TOOLS}/vim
+HERE         ?= $(PWD)
 VIM_DIR      ?= $${HOME}/.vim
 SYNTAX_DIR   ?= $(VIM_DIR)/after/syntax
 COLORS_DIR   ?= $(VIM_DIR)/colors

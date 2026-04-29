@@ -1,0 +1,157 @@
+#! /bin/bash
+
+__scripts() {
+    __compl_scripts() {
+        local cur prev base_cmd script_cmd
+        COMPREPLY=()
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+        base_cmd="${COMP_WORDS[1]}"
+        script_cmd="${COMP_WORDS[2]}"
+
+        if [[ "$prev" == "scripts" || ( "$base_cmd" == "scripts" && "${COMP_CWORD}" == 2 ) ]]; then
+            COMPREPLY=( $(compgen -W "ls use drop get exec --help" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$prev" == "use" || "$prev" == "drop" || "$prev" == "get" || "$prev" == "exec" ]]; then
+            COMPREPLY=( $(compgen -W "${SCRIPTS//,/ }" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$prev" == "--env" ]]; then
+            if [[ "${COMP_WORDS[COMP_CWORD-3]}" == "get" || "${COMP_WORDS[COMP_CWORD-4]}" == "get" || \
+                  "${COMP_WORDS[COMP_CWORD-3]}" == "exec" || "${COMP_WORDS[COMP_CWORD-4]}" == "exec" ]]; then
+                local target_script=""
+                for word in "${COMP_WORDS[@]}"; do
+                    if __is script "$word"; then target_script="$word"; break; fi
+                done
+                
+                local valid_envs=""
+                for e in "${!ENVS[@]}"; do
+                    local loaded_scripts="$(__list scripts --env "$e" 2>/dev/null)"
+                    if [[ ",${loaded_scripts}," == *",${target_script},"* ]]; then
+                        valid_envs="$valid_envs $e"
+                    fi
+                done
+                COMPREPLY=( $(compgen -W "$valid_envs" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
+            fi
+            return 0
+        fi
+    }
+    complete -F __compl_scripts scripts
+ 
+    scripts() {
+        local cmd="$1"
+        case "$cmd" in
+            ls)
+                shift
+                local env="$ENV"
+                while [[ $# -gt 0 ]]; do
+                    case "$1" in --env) env="$2"; shift ;; esac
+                    shift
+                done
+                
+                [[ -z "$env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
+                if ! __is env "$env"; then echo "Error: Invalid env '$env'" >&2; return 1; fi
+                
+                __list scripts --env "$env" | tr ',' '\n'
+                ;;
+            use|drop)
+                local action="$cmd"
+                local script="$2"
+                shift 2
+                
+                local env="$ENV"
+                while [[ $# -gt 0 ]]; do
+                    case "$1" in --env) env="$2"; shift ;; esac
+                    shift
+                done
+                
+                [[ -z "$env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
+                if ! __is env "$env"; then echo "Error: Invalid env '$env'" >&2; return 1; fi
+                if ! __is script "$script"; then echo "Error: Invalid script '$script'" >&2; return 1; fi
+                
+                local current="$(__list scripts --env "$env")"
+                
+                if [[ "$action" == "use" ]]; then
+                    if [[ ",${current}," != *",${script},"* ]]; then
+                         __update "ENV_SCRIPTS" "$env" "${current}${script}," "set"
+                    fi
+                    
+                    if [[ "$env" == "$ENV" ]]; then
+                        if [[ -f "$__OMNI_SCRIPTS/$script" ]]; then
+                            source "$__OMNI_SCRIPTS/$script"
+                            if declare -f "__${script}" > /dev/null; then
+                                "__${script}"
+                            fi
+                        fi
+                    fi
+                elif [[ "$action" == "drop" ]]; then
+                    local new_val=$(echo ",${current}" | sed "s/,${script},/,/g" | sed "s/^,//")
+                    __update "ENV_SCRIPTS" "$env" "$new_val" "set"
+                fi
+                ;;
+            get)
+                echo "TO BE IMPLEMENTED"
+                ;;
+            exec)
+                shift
+                local script="$1"
+                
+                if [[ -z "$script" ]]; then
+                    echo "Error: <script> is mandatory for exec" >&2
+                    return 1
+                fi
+                
+                if ! __is script "$script"; then 
+                    echo "Error: Unknown script '$script'" >&2
+                    return 1
+                fi
+                
+                shift
+                local action="$1"
+                shift
+                
+                local env="$ENV"
+                local args=()
+                
+                while [[ $# -gt 0 ]]; do
+                     if [[ "$1" == "--env" ]]; then
+                          env="$2"
+                          args+=("$1" "$2")
+                          shift 2
+                     else
+                          args+=("$1")
+                          shift
+                     fi
+                done
+                
+                [[ -z "$env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
+                if ! __is env "$env"; then echo "Error: Invalid env '$env'" >&2; return 1; fi
+                
+                local current="$(__list scripts --env "$env")"
+                if [[ ",${current}," == *",${script},"* ]]; then
+                     eval "$script \"$action\" \"\${args[@]}\""
+                else
+                     echo "Error: script '$script' is not enabled in env '$env'" >&2
+                     return 1
+                fi
+                ;;
+            --help|-h)
+                echo "scripts ls --env <env>"
+                echo "scripts use <script> --env <env>"
+                echo "scripts drop <script> --env <env>"
+                echo "scripts exec <script> <action> --env <env>"
+                echo "scripts get <script> --env <env>"
+                ;;
+            *)
+                echo "Unknown scripts command: $cmd" >&2
+                return 1
+                ;;
+        esac
+    }
+}

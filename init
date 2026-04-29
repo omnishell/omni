@@ -1,25 +1,27 @@
 #! /bin/bash
 
-function __init() {
+__init__() {
+    declare -Ag ENVS ENV_VARS ENV_SCRIPTS ENV_GLOBAL ENV_LOCAL ENV_COMMA ENV_OPEN
 
-BIN="$1"
-SEC="$2"
-TMP="$3"
+    export __OMNI_SH=$__OMNI/sh
+    export __OMNI_CONF=$__OMNI/conf
+    export __OMNI_SCRIPTS=$__OMNI/scripts
 
-export CONF=$(dirname $(readlink -f ${BASH_SOURCE[0]}))
-export CONF_SH=$CONF/sh
-export CONF_ENV=$CONF/env
-export CONF_TOOLS=$CONF/tools
+    export __OMNIRC="${__OMNIRC:-$HOME/.omnirc}"
 
-[ -n $BIN ] && export BIN=$BIN
-[ -n $SEC ] && export SEC=$SEC
-[ -n $TMP ] && export TMP=$TMP
+    [[ -f "$__OMNIRC" ]] && source "$__OMNIRC"
 
-source $CONF_SH/conf/builtins
-source $CONF_SH/conf/exports
-source $CONF_SH/conf/load
+    export SCRIPTS=$(shopt -s nullglob; files=("$__OMNI_SCRIPTS"/*); files=("${files[@]##*/}"); IFS=,; echo "${files[*]}")
 
-__builtins
-__exports $BIN $TMP $SEC
-__load
+    source $__OMNI_SH/builtins && __builtins
+    source $__OMNI_SH/helper   && __helper
+    source $__OMNI_SH/envs     && __envs
+    source $__OMNI_SH/scripts  && __scripts
+    source $__OMNI_SH/omni     && __omni
+    source $__OMNI_SH/custom   && __custom
+
+    export ENV="${ENV:-$__ENV}"
+    if [[ -n "$ENV" ]]; then
+        envs use "$ENV"
+    fi
 }

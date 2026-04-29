@@ -1,0 +1,49 @@
+#! /bin/bash
+
+__lazy() {
+    lazy() {
+        local name="$1" path="" func="" t_env="$ENV"
+        shift
+        
+        while [[ $# -gt 0 ]]; do
+            case "$1" in 
+                --path=*) path="${1#*=}" ;; --path) path="$2"; shift ;;
+                --func=*) func="${1#*=}" ;; --func) func="$2"; shift ;;
+                --env=*)  t_env="${1#*=}" ;; --env) t_env="$2"; shift ;;
+            esac
+            shift
+        done
+
+        [[ -z "$t_env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
+
+        # If no path is provided, dynamically fetch it using the helper
+        if [[ -z "$path" && -n "$name" ]]; then
+            local data="$(__get lazy "$name" --env "$t_env")"
+            if [[ $? -eq 0 ]]; then
+                # data is in the format "path:func"
+                path="${data%%:*}"
+                func="${data#*:}"
+            else
+                return 1 # __get already prints the error message
+            fi
+        fi
+
+        [[ -z "$func" ]] && func="$name"
+        
+        if [[ -n "$path" ]]; then
+            eval "function $name() { 
+                if [[ -f \"$path\" ]]; then
+                    source \"$path\"
+                    unset -f $name
+                    $func \"\$@\"
+                else
+                    echo \"Error: lazy file '$path' not found.\" >&2
+                    return 1
+                fi
+            }"
+        else
+            echo "Error: lazy script data missing for '$name'." >&2
+            return 1
+        fi
+    }
+}

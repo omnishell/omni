@@ -1,0 +1,36 @@
+#! /bin/bash
+
+__dot() {
+    dot() {
+        case "$1" in
+            "")
+                ls ;;
+            "-"|"...")
+                shift && back && ls ;;
+            "..")
+                shift && cd .. && ls ;;
+            ".")
+                shift && home ;;
+            ",")
+                shift && la "$@" ;;
+
+            *)
+                if [[ -d "$1" ]]; then
+                    cd "$1"
+                    shift
+                    ls "$@"
+                elif [[ -f "$1" ]]; then
+                    open "$1"
+                else
+                    ls "$@"
+                fi
+                ;;
+        esac
+    }
+
+    alias .='dot'
+    alias ..="dot .."
+    alias .,='dot ,'
+    alias .f='lf'
+    alias .d='ld'
+}

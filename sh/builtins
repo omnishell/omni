@@ -152,5 +152,3 @@ __builtins() {
         alias -- -="back"
         alias -- --="home" 
 }
-
-__builtins

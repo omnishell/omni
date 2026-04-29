@@ -1,0 +1,116 @@
+#! /bin/bash
+
+__helper() {
+	__is() {
+	    local type="$1"
+	    local name="$2"
+	    [[ -z "$name" ]] && return 1
+	    case "$type" in
+		env)
+		    [[ -n "${ENVS[$name]}" ]] && return 0 || return 1
+		    ;;
+		script)
+		    if [[ ",${SCRIPTS}," == *",${name},"* ]]; then return 0; else return 1; fi
+		    ;;
+	    esac
+	    return 1
+	}
+
+	__list() {
+	    local type="$1"
+	    shift
+	    local t_env="$ENV"
+	    
+	    while [[ $# -gt 0 ]]; do
+		case "$1" in --env) t_env="$2"; shift ;; esac
+		shift
+	    done
+	    
+	    [[ -z "$t_env" ]] && echo "Error: no env specified (use --env or export ENV)" >&2 && return 1
+
+	    local config=""
+	    case "$type" in
+		scripts) config="${ENV_SCRIPTS[$t_env]}" ;;
+		global)  config="${ENV_GLOBAL[$t_env]}"  ;;
+		lazy)    config="${ENV_LAZY[$t_env]}"    ;;
+		comma)   config="${ENV_COMMA[$t_env]}"   ;;
+		open)    config="${ENV_OPEN[$t_env]}"    ;;
+		*)       echo "Error: unknown list type $type" >&2; return 1 ;;
+	    esac
+	    
+	    echo "$config"
+	}
+
+	__get() {
+	    local type="$1"
+	    local name="$2"
+	    shift 2
+	    local t_env="$ENV"
+	    
+	    while [[ $# -gt 0 ]]; do
+		case "$1" in --env) t_env="$2"; shift ;; esac
+		shift
+	    done
+
+	    local config="$(__list "$type" --env "$t_env")"
+	    [[ $? -ne 0 ]] && return 1
+	    
+	    local padded=",${config}"
+	    if [[ "$type" == "scripts" ]]; then
+		local search=",${name},"
+		if [[ "$padded" == *"$search"* ]]; then
+		    echo "$name"
+		    return 0
+		fi
+	    else
+		local search=",${name}:"
+		if [[ "$padded" == *"$search"* ]]; then
+		    local temp="${padded#*$search}"
+		    echo "${temp%%,*}"
+		    return 0
+		fi
+	    fi
+
+	    echo "Error: $type '$name' is not registered in env '$t_env'." >&2
+	    return 1
+	}
+
+        __omnirc() {
+            local omnirc="${__OMNIRC:-$HOME/.omnirc}"
+            touch "$omnirc"
+            echo $omnirc
+        }
+
+        __update() {
+            local array_name="$1" key="$2" value="$3" mode="$4"
+            omnirc=$(__omnirc)
+
+            if [[ "$mode" == "rm" ]]; then
+                sed -i "/^${array_name}\[\"$key\"\]=/d" "$omnirc"
+                eval "unset ${array_name}[\"$key\"]"
+            else
+                local new_line="${array_name}[\"$key\"]=\"$value\""
+                if grep -q "^${array_name}\[\"$key\"\]=" "$omnirc"; then
+                    sed -i "s|^${array_name}\[\"$key\"\]=.*|$new_line|" "$omnirc"
+                else
+                    echo "$new_line" >> "$omnirc"
+                fi
+                eval "$new_line"
+            fi
+        }
+        
+        __global() {
+            local val="$1"
+            omnirc=$(__omnirc)
+            
+            if [[ -z "$val" ]]; then
+                sed -i "/^__ENV=[^\[]/d" "$omnirc"
+            else
+                if grep -q "^__ENV=[^\[]" "$omnirc"; then
+                    sed -i "s|^__ENV=[^\[].*|__ENV=\"$val\"|" "$omnirc"
+                else
+                    echo "__ENV=\"$val\"" >> "$omnirc"
+                fi
+            fi
+        }
+}

@@ -1,0 +1,64 @@
+#! /bin/bash
+
+__open() {
+    open() {
+        local target="$1"
+        local as_name=""
+        local t_env="$ENV"
+        shift
+
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --as=*)  as_name="${1#*=}" ;;
+                --as)    as_name="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                --env)   t_env="$2"; shift ;;
+            esac
+            shift
+        done
+
+        [[ -z "$t_env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
+        
+        # 1. Handle Explicit --as match using __get
+        if [[ -n "$as_name" ]]; then
+            local cmd_data="$(__get open "$as_name" --env "$t_env")"
+            if [[ $? -eq 0 ]]; then
+                # cmd_data is format "mime:ext:command"
+                local cmd="$(echo "$cmd_data" | cut -d: -f3)"
+                eval "$cmd \"$target\""
+                return $?
+            else
+                return 1
+            fi
+        fi
+
+        # Cache target mime type
+        local target_mime=""
+        [[ -f "$target" ]] && target_mime=$(file --brief --mime-type "$target")
+
+        # Fetch the entire open string to parse through fallbacks
+        local config="$(__list open --env "$t_env")"
+        IFS=',' read -ra ENTRIES <<< "$config"
+
+        # 2. Iterate for MIME/EXT matching
+        for entry in "${ENTRIES[@]}"; do
+            [[ -z "$entry" ]] && continue
+            local mime=$(echo "$entry" | cut -d: -f2)
+            local ext=$(echo "$entry" | cut -d: -f3)
+            local cmd=$(echo "$entry" | cut -d: -f4)
+
+            if [[ -n "$mime" ]] && [[ -n "$target_mime" ]] && [[ "$target_mime" == $mime ]]; then
+                eval "$cmd \"$target\"" && return 0
+            elif [[ -n "$ext" ]] && [[ -f "$target" ]] && [[ "$target" == *."$ext" ]]; then
+                eval "$cmd \"$target\"" && return 0
+            fi
+        done
+
+        # 3. Fallback to __OPEN
+        if [[ -n "$__OPEN" ]] && command -v "${__OPEN%% *}" >/dev/null 2>&1; then
+            eval "$__OPEN \"$target\"" && return 0
+        fi
+        
+        echo "Error: found no registered open kind for $target in env $t_env." >&2 && return 1
+    }
+}
