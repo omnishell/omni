@@ -1,0 +1,232 @@
+#! /bin/bash
+
+__compl() {
+    compl() {
+        local subcmd="$1"
+        shift
+        
+        case "$subcmd" in
+            spec)
+                local target="$1"
+                [[ -z "$target" ]] && echo "Error: compl spec requires a target function (e.g., __global)" >&2 && return 1
+                __omni_compl_spec "$target"
+                ;;
+                
+            build)
+                local target="$1"
+                [[ -z "$target" ]] && echo "Error: compl build requires a target function (e.g., __global)" >&2 && return 1
+                
+                local context="${target#__}"
+                local wrapper_name="__compl_wrapper_${context}"
+                
+                eval "
+                $wrapper_name() {
+                    __omni_compl_engine \"$context\"
+                }
+                "
+                echo "$wrapper_name"
+                ;;
+                
+            set)
+                local context="$1"
+                local compl_func="$2"
+                [[ -z "$context" || -z "$compl_func" ]] && echo "Error: compl set requires <context> and <compl_function>" >&2 && return 1
+                
+                COMPL["$context"]="$compl_func"
+                complete -o default -o bashdefault -F "$compl_func" "$context"
+                ;;
+                
+            use)
+                local context="$1"
+                shift
+                local t_env="$ENV"
+                
+                while [[ $# -gt 0 ]]; do
+                    case "$1" in 
+                        --env=*) t_env="${1#*=}" ;; 
+                        --env) t_env="$2"; shift ;; 
+                    esac
+                    shift
+                done
+                
+                [[ -z "$t_env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
+                
+                local target_func="__${context}"
+                if declare -F "$target_func" >/dev/null; then
+                    compl spec "$target_func"
+                    local wrapper_func="$(compl build "$target_func")"
+                    compl set "$context" "$wrapper_func"
+                else
+                    echo "Error: function '$target_func' not found. Cannot build completions." >&2
+                    return 1
+                fi
+                ;;
+                
+            *)
+                echo "Unknown compl command: $subcmd" >&2
+                return 1
+                ;;
+        esac
+    }
+
+    __omni_compl_spec() {
+        local func_name="${1:-}"
+        [[ -z "$func_name" ]] && return 1
+
+        local suffix="${func_name#__}"
+        suffix="${suffix^^}"
+        
+        __declare -gA "__OPTS_${suffix}" "__FLAGS_${suffix}"
+        local -n opts="__OPTS_${suffix}"
+        local -n flags="__FLAGS_${suffix}"
+        
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*#[[:space:]]*@opt[[:space:]]+([^=]+)=[[:space:]]*(.*) ]]; then
+                local path="${BASH_REMATCH[1]// /}"
+                local val="${BASH_REMATCH[2]}"
+                [[ "$path" == "/" ]] && path=""
+                __omni_compl_spec_nested "$path" "$val" "opts"
+            elif [[ "$line" =~ ^[[:space:]]*#[[:space:]]*@flag[[:space:]]+([^=]+)=[[:space:]]*(.*) ]]; then
+                local path="${BASH_REMATCH[1]// /}"
+                local val="${BASH_REMATCH[2]}"
+                [[ "$path" == "/" ]] && path="/"
+                flags["$path"]="$val"
+            fi
+        done < <(declare -f "$func_name")
+    }
+
+    __omni_compl_spec_nested() {
+        local path="$1" raw="$2" ref_name="${3:-}"
+        [[ -z "$ref_name" ]] && return 1
+        local -n opts_ref="$ref_name"
+        
+        local token="" parent="" inner=""
+        local in_parens=0
+        local root_key="${path:-/}"
+        
+        for (( i=0; i<${#raw}; i++ )); do
+            local char="${raw:$i:1}"
+            if [[ "$char" == "(" ]]; then
+                ((in_parens++))
+                if [[ $in_parens == 1 ]]; then
+                    parent="$token"
+                    opts_ref["$root_key"]+="${opts_ref["$root_key"]:+ }$parent"
+                    token=""
+                else
+                    inner+="$char"
+                fi
+            elif [[ "$char" == ")" ]]; then
+                ((in_parens--))
+                if [[ $in_parens == 0 ]]; then
+                    local new_path="$parent"
+                    [[ -n "$path" && "$path" != "/" ]] && new_path="${path}:${parent}"
+                    __omni_compl_spec_nested "$new_path" "$inner" "$ref_name"
+                    parent=""; inner=""
+                else
+                    inner+="$char"
+                fi
+            elif [[ "$char" =~ [[:space:],] && $in_parens == 0 ]]; then
+                if [[ -n "$token" ]]; then
+                    opts_ref["$root_key"]+="${opts_ref["$root_key"]:+ }$token"
+                    token=""
+                fi
+            else
+                if (( in_parens > 0 )); then inner+="$char"
+                else token+="$char"; fi
+            fi
+        done
+        if [[ -n "$token" ]]; then
+            opts_ref["$root_key"]+="${opts_ref["$root_key"]:+ }$token"
+        fi
+    }
+
+    __omni_compl_engine() {
+        local script="$1"
+        local cur="${COMP_WORDS[COMP_CWORD]}"
+        
+        local has_opts=0 has_flags=0
+        if declare -p "__OPTS_${script^^}" >/dev/null 2>&1; then local -n opts="__OPTS_${script^^}"; has_opts=1; 
+        elif declare -p "__OPTS_${script}" >/dev/null 2>&1; then local -n opts="__OPTS_${script}"; has_opts=1; fi
+        
+        if declare -p "__FLAGS_${script^^}" >/dev/null 2>&1; then local -n flags="__FLAGS_${script^^}"; has_flags=1; 
+        elif declare -p "__FLAGS_${script}" >/dev/null 2>&1; then local -n flags="__FLAGS_${script}"; has_flags=1; fi
+
+        local path=""
+        local context_words=()
+        for (( i=1; i < COMP_CWORD; i++ )); do
+            local word="${COMP_WORDS[i]}"
+            context_words+=("$word")
+            if [[ "$word" != -* ]]; then
+                if [[ -z "$path" ]]; then path="$word"
+                else path="${path}:${word}"
+                fi
+            fi
+        done
+
+        local root_path="${path:-/}"
+        local suggestions=""
+
+        if (( has_opts )) && [[ -n "${opts[$root_path]}" ]]; then
+            suggestions+=" ${opts[$root_path]}"
+        fi
+
+        if (( has_flags )) && [[ -n "${flags[$root_path]}" ]]; then
+            suggestions+=" ${flags[$root_path]//:/ }"
+        fi
+
+        local custom_compl="__${script}_compl"
+        if declare -f "$custom_compl" >/dev/null; then
+            local custom_suggs=$($custom_compl "${context_words[@]}")
+            suggestions+=" $custom_suggs"
+        fi
+
+        COMPREPLY=()
+        read -ra all_words <<< "$suggestions"
+        
+        for word in "${all_words[@]}"; do
+            if [[ "$word" == "$cur"* ]]; then
+                local duplicate=0
+                for existing in "${COMPREPLY[@]}"; do
+                    if [[ "$existing" == "$word" ]]; then
+                        duplicate=1; break
+                    fi
+                done
+                (( duplicate == 0 )) && COMPREPLY+=("$word")
+            fi
+        done
+    }
+
+    __compl_compl() {
+        local cur prev base_cmd
+        COMPREPLY=()
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+        base_cmd="${COMP_WORDS[1]}"
+
+        if [[ "${COMP_CWORD}" == 1 ]]; then
+            COMPREPLY=( $(compgen -W "spec build set use" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$prev" == "use" || "$prev" == "spec" || "$prev" == "build" ]]; then
+            COMPREPLY=( $(compgen -W "${SCRIPTS//,/ }" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$prev" == "--env" ]]; then
+            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$base_cmd" == "use" && "$cur" == -* ]]; then
+            COMPREPLY=( $(compgen -W "--env" -- "$cur") )
+            return 0
+        fi
+    }
+
+    __compl_init() {
+        __declare -gA COMPL
+        __complete compl
+        __clean    compl
+    }
+}

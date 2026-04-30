@@ -1,36 +1,21 @@
 #! /bin/bash
 
 __envs() {
-    declare -Ag __ENV ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA ENV_SCRIPTS
 
-    __compl_envs() {
-        local cur prev cmd
-        COMPREPLY=()
-        cur="${COMP_WORDS[COMP_CWORD]}"
-        prev="${COMP_WORDS[COMP_CWORD-1]}"
+    __envs_global() {
+        local val="$1"
+        omnirc=$(__omnirc)
 
-        if [[ "${COMP_WORDS[1]}" == "envs" ]]; then
-            cmd="${COMP_WORDS[2]}"
+        if [[ -z "$val" ]]; then
+            sed -i "/^__ENV=[^\[]/d" "$omnirc"
         else
-            cmd="${COMP_WORDS[1]}"
-        fi
-
-        if [[ "$prev" == "envs" ]]; then
-            COMPREPLY=( $(compgen -W "ls set rm use --help" -- "$cur") )
-            return 0
-        fi
-
-        if [[ "$prev" == "use" || "$prev" == "rm" ]]; then
-            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
-            return 0
-        fi
-
-        if [[ "$cmd" == "set" && "$prev" != "set" && "$cur" == -* ]]; then
-            COMPREPLY=( $(compgen -W "--path --bin --tmp --sec" -- "$cur") )
-            return 0
+            if grep -q "^__ENV=[^\[]" "$omnirc"; then
+                sed -i "s|^__ENV=[^\[].*|__ENV=\"$val\"|" "$omnirc"
+            else
+                echo "__ENV=\"$val\"" >> "$omnirc"
+            fi
         fi
     }
-    complete -F __compl_envs envs
 
     envs() {
         local cmd="$1"
@@ -42,27 +27,25 @@ __envs() {
                 shift
                 local name="$1"
                 shift
-                local path="" bin="" tmp=""
+                local env_path="" bin="" tmp=""
                 
                 while [[ $# -gt 0 ]]; do
                     case "$1" in
-                        -p=*|--path=*) path="${1#*=}" ;;
-                        -p|--path)     path="$2"; shift ;;
+                        -p=*|--path=*) env_path="${1#*=}" ;;
+                        -p|--path)     env_path="$2"; shift ;;
                         -b=*|--bin=*)  bin="${1#*=}" ;;
                         -b|--bin)      bin="$2"; shift ;;
                         -t=*|--tmp=*)  tmp="${1#*=}" ;;
                         -t|--tmp)      tmp="$2"; shift ;;
-                        -s=*|--sec=*)  sec="${1#*=}" ;;
-                        -s|--sec)      sec="$2"; shift ;;
                     esac
                     shift
                 done
                 
                 [[ -z "$name" ]] && echo "Error: <env> is mandatory" >&2 && return 1
-                [[ -z "$path" ]] && echo "Error: --path is mandatory" >&2 && return 1
+                [[ -z "$env_path" ]] && echo "Error: --path is mandatory" >&2 && return 1
                 
-                __update "ENVS" "$name" "$path" "set"
-                __update "ENV_VARS" "$name" "path:$path,bin:$bin,tmp:$tmp,sec:$sec" "set"
+                __update "ENVS" "$name" "$env_path" "set"
+                __update "ENV_VARS" "$name" "path:$env_path,bin:$bin,tmp:$tmp" "set"
                 ;;
             rm)
                 local name="$2"
@@ -72,7 +55,7 @@ __envs() {
                      echo "Error: '$name' is not a valid env" >&2; return 1
                 fi
                 
-                [[ "$__ENV" == "$name" ]] && __envs_update_global_marker ""
+                [[ "$__ENV" == "$name" ]] && __envs_global ""
                 
                 __update "ENVS" "$name" "" "rm"
                 __update "ENV_VARS" "$name" "" "rm"
@@ -98,23 +81,29 @@ __envs() {
                 export ENV="$name"
                 
                 if $set_global; then
-                     __envs_update_global_marker "$name"
-                     export ENV_GLOBAL="$name"
+                     __envs_global "$name"
+                     export __ENV="$name"
                 fi
 
-                local scripts=$(__list scripts --env "$name" 2>/dev/null)
-                if [[ -n "$scripts" ]]; then
-                    for script in ${scripts//,/ }; do
-                        source "$__OMNI_SCRIPTS/$script"
-                        if declare -f "__${script}" > /dev/null; then
-                            "__${script}"
+                local active_scripts=$(__list scripts --env "$name" 2>/dev/null)
+                if [[ -n "$active_scripts" ]]; then
+                    for script in ${active_scripts//,/ }; do
+                        if [[ -f "$__OMNI_SCRIPTS/$script" ]]; then
+                            source "$__OMNI_SCRIPTS/$script"
+                            if declare -f "__${script}" > /dev/null; then
+                                "__${script}"
+                                if declare -f "__${script}_init" > /dev/null; then
+                                    "__${script}_init"
+                                fi
+                                unset -f "__${script}" "__${script}_init" "__${script}_aliases" 2>/dev/null || true
+                            fi
                         fi
                     done
                 fi
-                ;; 
+                ;;
             --help|-h)
                 echo "envs ls"
-                echo "envs set <env> -p/--path=<path> -b/--bin=<bin_dir> -t/--tmp=<tmp_dir>"
+                echo "envs set <env> -p/--path=<env_path> -b/--bin=<bin_path> -t/--tmp=<tmp_path>"
                 echo "envs rm <env>"
                 echo "envs use <env> [-g/--global]"
                 ;;
@@ -122,4 +111,38 @@ __envs() {
                 echo "Unknown envs command: $cmd" >&2; return 1 ;;
         esac
     }
-}                
+
+    __envs_compl() {
+        local cur prev cmd
+        COMPREPLY=()
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+        if [[ "${COMP_WORDS[1]}" == "envs" ]]; then
+            cmd="${COMP_WORDS[2]}"
+        else
+            cmd="${COMP_WORDS[1]}"
+        fi
+
+        if [[ "$prev" == "envs" ]]; then
+            COMPREPLY=( $(compgen -W "ls set rm use --help" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$prev" == "use" || "$prev" == "rm" ]]; then
+            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$cmd" == "set" && "$prev" != "set" && "$cur" == -* ]]; then
+            COMPREPLY=( $(compgen -W "--path -p --bin -b --tmp -t" -- "$cur") )
+            return 0
+        fi
+    }
+
+    __envs_init() {
+        __declare -gA __ENV ENVS ENV_VARS ENV_GLOBAL ENV_LAZY ENV_OPEN ENV_COMMA ENV_SCRIPTS
+        __complete envs
+        __clean    envs
+    } 
+}

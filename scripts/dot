@@ -13,7 +13,6 @@ __dot() {
                 shift && home ;;
             ",")
                 shift && la "$@" ;;
-
             *)
                 if [[ -d "$1" ]]; then
                     cd "$1"
@@ -28,9 +27,30 @@ __dot() {
         esac
     }
 
-    alias .='dot'
-    alias ..="dot .."
-    alias .,='dot ,'
-    alias .f='lf'
-    alias .d='ld'
+    __dot_aliases() {
+        alias .='dot'
+        alias ..="dot .."
+        alias .,='dot ,'
+        alias .f='lf'
+        alias .d='ld'
+
+    }
+
+    __dot_compl() {
+        local cur
+        COMPREPLY=()
+        cur="${COMP_WORDS[COMP_CWORD]}"
+
+        if [[ "${COMP_CWORD}" == 1 && "$cur" == .* || "$cur" == , || "$cur" == - ]]; then
+            COMPREPLY=( $(compgen -W "- ... .. . ," -- "$cur") )
+            return 0
+        fi
+        
+    }
+
+    __dot_init() {
+        __aliases  dot
+        __complete dot
+        __clean    dot
+    }
 }

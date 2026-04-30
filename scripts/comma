@@ -9,7 +9,6 @@ __comma() {
         local t_env="$ENV"
         local alias_path=""
         
-        # Capture positional parameter for path if provided immediately
         if [[ "$subcmd" == "set" && $# -gt 0 && "$1" != -* ]]; then
             alias_path="$1"
             shift
@@ -17,8 +16,10 @@ __comma() {
 
         while [[ $# -gt 0 ]]; do
             case "$1" in
-                --env=*)  t_env="${1#*=}" ;; --env) t_env="$2"; shift ;;
-                --path=*) alias_path="${1#*=}" ;; --path) alias_path="$2"; shift ;;
+                --env=*)  t_env="${1#*=}" ;;
+                --env) t_env="$2"; shift ;;
+                --path=*) alias_path="${1#*=}" ;; 
+                --path) alias_path="$2"; shift ;;
             esac
             shift
         done
@@ -27,15 +28,12 @@ __comma() {
 
         if [[ "$subcmd" == "set" ]]; then
             [[ -z "$alias_path" ]] && echo "Error: path is mandatory for comma set" >&2 && return 1
-            
-            # Delegate state management to omni
             omni script comma set "$alias_name" --env "$t_env" --path "$alias_path"
             
         elif [[ "$subcmd" == "rm" ]]; then
             omni script comma rm "$alias_name" --env "$t_env"
 
         elif [[ "$subcmd" == "dot" ]]; then
-            # Directly fetch the path using the new fast helper logic
             local found_path="$(__get comma "$alias_name" --env "$t_env")"
             if [[ $? -eq 0 && -n "$found_path" ]]; then
                 dot "$found_path"
@@ -48,9 +46,52 @@ __comma() {
             return 1
         fi
     }
+    __comma_aliases() {
+        alias ,="comma dot"
+        alias ,a="comma set"
+        alias ,d="comma rm"
+    }
 
-    # Define Aliases
-    alias ,="comma dot"
-    alias ,a="comma set"
-    alias ,d="comma rm"
+    __comma_compl() {
+        local cur prev base_cmd
+        COMPREPLY=()
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+        base_cmd="${COMP_WORDS[1]}"
+
+        if [[ "${COMP_CWORD}" == 1 ]]; then
+            COMPREPLY=( $(compgen -W "set rm dot" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$prev" == "--env" ]]; then
+            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$prev" == "rm" || "$prev" == "dot" ]]; then
+            local current_env="${ENV:-$ENV_GLOBAL}"
+            local commas="$(__list comma --env "$current_env" 2>/dev/null)"
+            if [[ -n "$commas" ]]; then
+                COMPREPLY=( $(compgen -W "$(echo "$commas" | tr ',' '\n' | cut -d: -f1 | tr '\n' ' ')" -- "$cur") )
+            fi
+            return 0
+        fi
+
+        if [[ "$cur" == -* ]]; then
+            if [[ "$base_cmd" == "set" ]]; then
+                COMPREPLY=( $(compgen -W "--path --env" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -W "--env" -- "$cur") )
+            fi
+            return 0
+        fi
+    }
+
+    __comma_init(){
+        __aliases  comma
+        __complete comma
+        __clean    comma
+    }
+    
 }

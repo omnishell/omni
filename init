@@ -1,27 +1,34 @@
 #! /bin/bash
 
 __init__() {
-    declare -Ag ENVS ENV_VARS ENV_SCRIPTS ENV_GLOBAL ENV_LOCAL ENV_COMMA ENV_OPEN
-
     export __OMNI_SH=$__OMNI/sh
     export __OMNI_CONF=$__OMNI/conf
     export __OMNI_SCRIPTS=$__OMNI/scripts
 
     export __OMNIRC="${__OMNIRC:-$HOME/.omnirc}"
 
-    [[ -f "$__OMNIRC" ]] && source "$__OMNIRC"
-
     export SCRIPTS=$(shopt -s nullglob; files=("$__OMNI_SCRIPTS"/*); files=("${files[@]##*/}"); IFS=,; echo "${files[*]}")
 
-    source $__OMNI_SH/builtins && __builtins
-    source $__OMNI_SH/helper   && __helper
-    source $__OMNI_SH/envs     && __envs
-    source $__OMNI_SH/scripts  && __scripts
-    source $__OMNI_SH/omni     && __omni
-    source $__OMNI_SH/custom   && __custom
+    for mod in builtins helper envs scripts omni custom; do
+        if [[ -f "$__OMNI_SH/$mod" ]]; then
+            source "$__OMNI_SH/$mod"
+            if declare -f "__${mod}" > /dev/null; then
+                "__${mod}"
+                if declare -f "__${mod}_init" > /dev/null; then
+                    "__${mod}_init"
+                fi
+                unset -f "__${mod}" "__${mod}_init" "__${mod}_aliases" 2>/dev/null || true
+            fi
+        fi
+    done
+
+    [[ -f "$__OMNIRC" ]] && source "$__OMNIRC"
 
     export ENV="${ENV:-$__ENV}"
     if [[ -n "$ENV" ]]; then
         envs use "$ENV"
     fi
 }
+
+__init__
+unset -f __init__

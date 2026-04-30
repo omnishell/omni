@@ -1,0 +1,57 @@
+#! /bin/bash
+
+__private() {
+    private() {
+        local type_flag="" name="" is_func=0 unset_flag="-v"
+        
+        case "$1" in
+            -a|--array)  type_flag="-a"; shift ;;
+            -d|--dict)   type_flag="-A"; shift ;;
+            -i|--int)    type_flag="-i"; shift ;;
+            -f|--func)   is_func=1; unset_flag="-f"; shift ;;
+            -s|--string) shift ;; 
+            -*)          echo "Error: Unknown private flag $1" >&2; return 1 ;;
+        esac
+        
+        name="${1:-}"
+        [[ -z "$name" ]] && echo "Error: private requires a name." >&2 && return 1
+
+        local caller_func="${FUNCNAME[1]:-}"
+
+        if (( ! is_func )); then
+            if [[ -n "$type_flag" ]]; then
+                declare -g $type_flag "$name"
+            else
+                declare -g "$name"
+            fi
+        fi
+
+        if [[ -n "$caller_func" && "$caller_func" != "source" && "$caller_func" != "main" ]]; then
+            local current_trap="$(trap -p RETURN)"
+            if [[ -n "$current_trap" ]]; then
+                current_trap="${current_trap#*\'}" 
+                current_trap="${current_trap%\'*}" 
+            fi
+            trap "${current_trap:+$current_trap; }unset $unset_flag $name 2>/dev/null || true" RETURN
+        else
+            __MODULE_CLEANUPS+=("unset $unset_flag $name 2>/dev/null || true")
+        fi
+    }
+
+    __private_compl() {
+        local cur prev
+        COMPREPLY=()
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+        if [[ "${COMP_CWORD}" == 1 || "$cur" == -* ]]; then
+            COMPREPLY=( $(compgen -W "-a --array -d --dict -i --int -f --func -s --string" -- "$cur") )
+            return 0
+        fi
+    }
+
+    __private_init() {
+        __complete private
+        __clean private
+    }
+}

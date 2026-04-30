@@ -19,11 +19,9 @@ __open() {
 
         [[ -z "$t_env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
         
-        # 1. Handle Explicit --as match using __get
         if [[ -n "$as_name" ]]; then
             local cmd_data="$(__get open "$as_name" --env "$t_env")"
             if [[ $? -eq 0 ]]; then
-                # cmd_data is format "mime:ext:command"
                 local cmd="$(echo "$cmd_data" | cut -d: -f3)"
                 eval "$cmd \"$target\""
                 return $?
@@ -32,15 +30,12 @@ __open() {
             fi
         fi
 
-        # Cache target mime type
         local target_mime=""
         [[ -f "$target" ]] && target_mime=$(file --brief --mime-type "$target")
 
-        # Fetch the entire open string to parse through fallbacks
         local config="$(__list open --env "$t_env")"
         IFS=',' read -ra ENTRIES <<< "$config"
 
-        # 2. Iterate for MIME/EXT matching
         for entry in "${ENTRIES[@]}"; do
             [[ -z "$entry" ]] && continue
             local mime=$(echo "$entry" | cut -d: -f2)
@@ -54,11 +49,41 @@ __open() {
             fi
         done
 
-        # 3. Fallback to __OPEN
         if [[ -n "$__OPEN" ]] && command -v "${__OPEN%% *}" >/dev/null 2>&1; then
             eval "$__OPEN \"$target\"" && return 0
         fi
         
         echo "Error: found no registered open kind for $target in env $t_env." >&2 && return 1
+    }
+
+    __open_compl() {
+        local cur prev
+        COMPREPLY=()
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+        if [[ "$prev" == "--env" ]]; then
+            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
+            return 0
+        fi
+        
+        if [[ "$prev" == "--as" ]]; then
+            local current_env="${ENV:-$ENV_GLOBAL}"
+            local opens="$(__list open --env "$current_env" 2>/dev/null)"
+            if [[ -n "$opens" ]]; then
+                COMPREPLY=( $(compgen -W "$(echo "$opens" | tr ',' '\n' | cut -d: -f1 | tr '\n' ' ')" -- "$cur") )
+            fi
+            return 0
+        fi
+
+        if [[ "$cur" == -* ]]; then
+            COMPREPLY=( $(compgen -W "--as --env" -- "$cur") )
+            return 0
+        fi
+    }
+
+    __open_init() {
+        __complete open
+        __clean    open
     }
 }

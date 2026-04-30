@@ -1,7 +1,122 @@
 #! /bin/bash
 
 __scripts() {
-    __compl_scripts() {
+    scripts() {
+        local cmd="$1"
+        case "$cmd" in
+            ls)
+                shift
+                local t_env="$ENV"
+                while [[ $# -gt 0 ]]; do
+                    case "$1" in --env) t_env="$2"; shift ;; esac
+                    shift
+                done
+                
+                [[ -z "$t_env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
+                if ! __is env "$t_env"; then echo "Error: Invalid env '$t_env'" >&2; return 1; fi
+                
+                __list scripts --env "$t_env" | tr ',' '\n'
+                ;;
+            use|drop)
+                local action="$cmd"
+                local s_name="$2"
+                shift 2
+                
+                local t_env="$ENV"
+                while [[ $# -gt 0 ]]; do
+                    case "$1" in --env) t_env="$2"; shift ;; esac
+                    shift
+                done
+                
+                [[ -z "$t_env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
+                if ! __is env "$t_env"; then echo "Error: Invalid env '$t_env'" >&2; return 1; fi
+                if ! __is script "$s_name"; then echo "Error: Invalid script '$s_name'" >&2; return 1; fi
+                
+                local current="$(__list scripts --env "$t_env")"
+                
+                if [[ "$action" == "use" ]]; then
+                    if [[ ",${current}," != *",${s_name},"* ]]; then
+                         __update "ENV_SCRIPTS" "$t_env" "${current}${s_name}," "set"
+                    fi
+                    
+                    if [[ "$t_env" == "$ENV" ]]; then
+                        if [[ -f "$__OMNI_SCRIPTS/$s_name" ]]; then
+                            source "$__OMNI_SCRIPTS/$s_name"
+                            if declare -f "__${s_name}" > /dev/null; then
+                                "__${s_name}"
+                                if declare -f "__${s_name}_init" > /dev/null; then
+                                    "__${s_name}_init"
+                                fi
+                                unset -f "__${s_name}" "__${s_name}_init" "__${s_name}_aliases" 2>/dev/null || true
+                            fi
+                        fi
+                    fi
+                elif [[ "$action" == "drop" ]]; then
+                    local new_val=$(echo ",${current}" | sed "s/,${s_name},/,/g" | sed "s/^,//")
+                    __update "ENV_SCRIPTS" "$t_env" "$new_val" "set"
+                fi
+                ;;
+            get)
+                echo "TO BE IMPLEMENTED"
+                ;;
+            exec)
+                shift
+                local s_name="$1"
+                
+                if [[ -z "$s_name" ]]; then
+                    echo "Error: <script> is mandatory for exec" >&2
+                    return 1
+                fi
+                
+                if ! __is script "$s_name"; then 
+                    echo "Error: Unknown script '$s_name'" >&2
+                    return 1
+                fi
+                
+                shift
+                local s_action="$1"
+                shift
+                
+                local t_env="$ENV"
+                local args=()
+                
+                while [[ $# -gt 0 ]]; do
+                     if [[ "$1" == "--env" ]]; then
+                          t_env="$2"
+                          args+=("$1" "$2")
+                          shift 2
+                     else
+                          args+=("$1")
+                          shift
+                     fi
+                done
+                
+                [[ -z "$t_env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
+                if ! __is env "$t_env"; then echo "Error: Invalid env '$t_env'" >&2; return 1; fi
+                
+                local current="$(__list scripts --env "$t_env")"
+                if [[ ",${current}," == *",${s_name},"* ]]; then
+                     eval "$s_name \"$s_action\" \"\${args[@]}\""
+                else
+                     echo "Error: script '$s_name' is not enabled in env '$t_env'" >&2
+                     return 1
+                fi
+                ;;
+            --help|-h)
+                echo "scripts ls --env <env>"
+                echo "scripts use <script> --env <env>"
+                echo "scripts drop <script> --env <env>"
+                echo "scripts exec <script> <action> --env <env>"
+                echo "scripts get <script> --env <env>"
+                ;;
+            *)
+                echo "Unknown scripts command: $cmd" >&2
+                return 1
+                ;;
+        esac
+    }
+
+    __scripts_compl() {
         local cur prev base_cmd script_cmd
         COMPREPLY=()
         cur="${COMP_WORDS[COMP_CWORD]}"
@@ -42,116 +157,8 @@ __scripts() {
             return 0
         fi
     }
-    complete -F __compl_scripts scripts
- 
-    scripts() {
-        local cmd="$1"
-        case "$cmd" in
-            ls)
-                shift
-                local env="$ENV"
-                while [[ $# -gt 0 ]]; do
-                    case "$1" in --env) env="$2"; shift ;; esac
-                    shift
-                done
-                
-                [[ -z "$env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
-                if ! __is env "$env"; then echo "Error: Invalid env '$env'" >&2; return 1; fi
-                
-                __list scripts --env "$env" | tr ',' '\n'
-                ;;
-            use|drop)
-                local action="$cmd"
-                local script="$2"
-                shift 2
-                
-                local env="$ENV"
-                while [[ $# -gt 0 ]]; do
-                    case "$1" in --env) env="$2"; shift ;; esac
-                    shift
-                done
-                
-                [[ -z "$env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
-                if ! __is env "$env"; then echo "Error: Invalid env '$env'" >&2; return 1; fi
-                if ! __is script "$script"; then echo "Error: Invalid script '$script'" >&2; return 1; fi
-                
-                local current="$(__list scripts --env "$env")"
-                
-                if [[ "$action" == "use" ]]; then
-                    if [[ ",${current}," != *",${script},"* ]]; then
-                         __update "ENV_SCRIPTS" "$env" "${current}${script}," "set"
-                    fi
-                    
-                    if [[ "$env" == "$ENV" ]]; then
-                        if [[ -f "$__OMNI_SCRIPTS/$script" ]]; then
-                            source "$__OMNI_SCRIPTS/$script"
-                            if declare -f "__${script}" > /dev/null; then
-                                "__${script}"
-                            fi
-                        fi
-                    fi
-                elif [[ "$action" == "drop" ]]; then
-                    local new_val=$(echo ",${current}" | sed "s/,${script},/,/g" | sed "s/^,//")
-                    __update "ENV_SCRIPTS" "$env" "$new_val" "set"
-                fi
-                ;;
-            get)
-                echo "TO BE IMPLEMENTED"
-                ;;
-            exec)
-                shift
-                local script="$1"
-                
-                if [[ -z "$script" ]]; then
-                    echo "Error: <script> is mandatory for exec" >&2
-                    return 1
-                fi
-                
-                if ! __is script "$script"; then 
-                    echo "Error: Unknown script '$script'" >&2
-                    return 1
-                fi
-                
-                shift
-                local action="$1"
-                shift
-                
-                local env="$ENV"
-                local args=()
-                
-                while [[ $# -gt 0 ]]; do
-                     if [[ "$1" == "--env" ]]; then
-                          env="$2"
-                          args+=("$1" "$2")
-                          shift 2
-                     else
-                          args+=("$1")
-                          shift
-                     fi
-                done
-                
-                [[ -z "$env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
-                if ! __is env "$env"; then echo "Error: Invalid env '$env'" >&2; return 1; fi
-                
-                local current="$(__list scripts --env "$env")"
-                if [[ ",${current}," == *",${script},"* ]]; then
-                     eval "$script \"$action\" \"\${args[@]}\""
-                else
-                     echo "Error: script '$script' is not enabled in env '$env'" >&2
-                     return 1
-                fi
-                ;;
-            --help|-h)
-                echo "scripts ls --env <env>"
-                echo "scripts use <script> --env <env>"
-                echo "scripts drop <script> --env <env>"
-                echo "scripts exec <script> <action> --env <env>"
-                echo "scripts get <script> --env <env>"
-                ;;
-            *)
-                echo "Unknown scripts command: $cmd" >&2
-                return 1
-                ;;
-        esac
+
+    __scripts_init() {
+        __complete scripts
     }
 }

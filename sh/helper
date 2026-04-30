@@ -1,116 +1,226 @@
 #! /bin/bash
 
 __helper() {
-	__is() {
-	    local type="$1"
-	    local name="$2"
-	    [[ -z "$name" ]] && return 1
-	    case "$type" in
-		env)
-		    [[ -n "${ENVS[$name]}" ]] && return 0 || return 1
-		    ;;
-		script)
-		    if [[ ",${SCRIPTS}," == *",${name},"* ]]; then return 0; else return 1; fi
-		    ;;
-	    esac
-	    return 1
-	}
+    __is() {
+        local type="$1"
+        local name="$2"
+        [[ -z "$name" ]] && return 1
+        case "$type" in
+            env)
+                [[ -n "${ENVS[$name]}" ]] && return 0 || return 1
+                ;;
+            script)
+                if [[ ",${SCRIPTS}," == *",${name},"* ]]; then return 0; else return 1; fi
+                ;;
+        esac
+        return 1
+    }
 
-	__list() {
-	    local type="$1"
-	    shift
-	    local t_env="$ENV"
-	    
-	    while [[ $# -gt 0 ]]; do
-		case "$1" in --env) t_env="$2"; shift ;; esac
-		shift
-	    done
-	    
-	    [[ -z "$t_env" ]] && echo "Error: no env specified (use --env or export ENV)" >&2 && return 1
-
-	    local config=""
-	    case "$type" in
-		scripts) config="${ENV_SCRIPTS[$t_env]}" ;;
-		global)  config="${ENV_GLOBAL[$t_env]}"  ;;
-		lazy)    config="${ENV_LAZY[$t_env]}"    ;;
-		comma)   config="${ENV_COMMA[$t_env]}"   ;;
-		open)    config="${ENV_OPEN[$t_env]}"    ;;
-		*)       echo "Error: unknown list type $type" >&2; return 1 ;;
-	    esac
-	    
-	    echo "$config"
-	}
-
-	__get() {
-	    local type="$1"
-	    local name="$2"
-	    shift 2
-	    local t_env="$ENV"
-	    
-	    while [[ $# -gt 0 ]]; do
-		case "$1" in --env) t_env="$2"; shift ;; esac
-		shift
-	    done
-
-	    local config="$(__list "$type" --env "$t_env")"
-	    [[ $? -ne 0 ]] && return 1
-	    
-	    local padded=",${config}"
-	    if [[ "$type" == "scripts" ]]; then
-		local search=",${name},"
-		if [[ "$padded" == *"$search"* ]]; then
-		    echo "$name"
-		    return 0
-		fi
-	    else
-		local search=",${name}:"
-		if [[ "$padded" == *"$search"* ]]; then
-		    local temp="${padded#*$search}"
-		    echo "${temp%%,*}"
-		    return 0
-		fi
-	    fi
-
-	    echo "Error: $type '$name' is not registered in env '$t_env'." >&2
-	    return 1
-	}
-
-        __omnirc() {
-            local omnirc="${__OMNIRC:-$HOME/.omnirc}"
-            touch "$omnirc"
-            echo $omnirc
-        }
-
-        __update() {
-            local array_name="$1" key="$2" value="$3" mode="$4"
-            omnirc=$(__omnirc)
-
-            if [[ "$mode" == "rm" ]]; then
-                sed -i "/^${array_name}\[\"$key\"\]=/d" "$omnirc"
-                eval "unset ${array_name}[\"$key\"]"
-            else
-                local new_line="${array_name}[\"$key\"]=\"$value\""
-                if grep -q "^${array_name}\[\"$key\"\]=" "$omnirc"; then
-                    sed -i "s|^${array_name}\[\"$key\"\]=.*|$new_line|" "$omnirc"
-                else
-                    echo "$new_line" >> "$omnirc"
-                fi
-                eval "$new_line"
-            fi
-        }
+    __list() {
+        local type="$1"
+        shift
+        local t_env="$ENV"
         
-        __global() {
-            local val="$1"
-            omnirc=$(__omnirc)
-            
-            if [[ -z "$val" ]]; then
-                sed -i "/^__ENV=[^\[]/d" "$omnirc"
+        while [[ $# -gt 0 ]]; do
+            case "$1" in --env) t_env="$2"; shift ;; esac
+            shift
+        done
+        
+        [[ -z "$t_env" ]] && echo "Error: no env specified (use --env or export ENV)" >&2 && return 1
+
+        local config=""
+        case "$type" in
+            scripts) config="${ENV_SCRIPTS[$t_env]}" ;;
+            global)  config="${ENV_GLOBAL[$t_env]}"  ;;
+            lazy)    config="${ENV_LAZY[$t_env]}"    ;;
+            comma)   config="${ENV_COMMA[$t_env]}"   ;;
+            open)    config="${ENV_OPEN[$t_env]}"    ;;
+            *)       echo "Error: unknown list type $type" >&2; return 1 ;;
+        esac
+        
+        echo "$config"
+    }
+
+    __get() {
+        local type="$1"
+        local name="$2"
+        shift 2
+        local t_env="$ENV"
+        
+        while [[ $# -gt 0 ]]; do
+            case "$1" in --env) t_env="$2"; shift ;; esac
+            shift
+        done
+
+        local config="$(__list "$type" --env "$t_env")"
+        [[ $? -ne 0 ]] && return 1
+        
+        local padded=",${config}"
+        if [[ "$type" == "scripts" ]]; then
+            local search=",${name},"
+            if [[ "$padded" == *"$search"* ]]; then
+                echo "$name"
+                return 0
+            fi
+        else
+            local search=",${name}:"
+            if [[ "$padded" == *"$search"* ]]; then
+                local temp="${padded#*$search}"
+                echo "${temp%%,*}"
+                return 0
+            fi
+        fi
+
+        echo "Error: $type '$name' is not registered in env '$t_env'." >&2
+        return 1
+    }
+
+    __omnirc() {
+        local omnirc="${__OMNIRC:-$HOME/.omnirc}"
+        touch "$omnirc"
+        echo $omnirc
+    }
+
+    __update() {
+        local array_name="$1" key="$2" value="$3" mode="$4"
+        omnirc=$(__omnirc)
+
+        if [[ "$mode" == "rm" ]]; then
+            sed -i "/^${array_name}\[\"$key\"\]=/d" "$omnirc"
+            eval "unset ${array_name}[\"$key\"]"
+        else
+            local new_line="${array_name}[\"$key\"]=\"$value\""
+            if grep -q "^${array_name}\[\"$key\"\]=" "$omnirc"; then
+                sed -i "s|^${array_name}\[\"$key\"\]=.*|$new_line|" "$omnirc"
             else
-                if grep -q "^__ENV=[^\[]" "$omnirc"; then
-                    sed -i "s|^__ENV=[^\[].*|__ENV=\"$val\"|" "$omnirc"
-                else
-                    echo "__ENV=\"$val\"" >> "$omnirc"
+                echo "$new_line" >> "$omnirc"
+            fi
+            eval "$new_line"
+        fi
+    }
+    
+    __spec() {
+        local func_name="${1:-}"
+        if [[ -z "$func_name" ]]; then
+            echo "Error: __spec requires a function name to parse." >&2
+            return 1
+        fi
+
+        local suffix="${func_name#__}"
+        suffix="${suffix^^}"
+        
+        declare -gA "__OPTS_${suffix}"
+        declare -gA "__FLAGS_${suffix}"
+        local -n opts="__OPTS_${suffix}"
+        local -n flags="__FLAGS_${suffix}"
+        
+        for k in "${!opts[@]}"; do unset 'opts[$k]'; done
+        for k in "${!flags[@]}"; do unset 'flags[$k]'; done
+        
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*#[[:space:]]*@opt[[:space:]]+([^=]+)=[[:space:]]*(.*) ]]; then
+                local path="${BASH_REMATCH[1]// /}"
+                local val="${BASH_REMATCH[2]}"
+                [[ "$path" == "/" ]] && path=""
+                
+                __parse "$path" "$val" "opts"
+                
+            elif [[ "$line" =~ ^[[:space:]]*#[[:space:]]*@flag[[:space:]]+([^=]+)=[[:space:]]*(.*) ]]; then
+                local path="${BASH_REMATCH[1]// /}"
+                local val="${BASH_REMATCH[2]}"
+                [[ "$path" == "/" ]] && path="/"
+                flags["$path"]="$val"
+            fi
+        done < <(declare -f "$func_name")
+    }
+    
+    __complete() {
+        local script="$1"
+        local compl="__${script}_compl"
+        eval "complete -o default -o bashdefault -F $compl $script"
+    }
+
+    __aliases() {
+        local script="$1"
+        local aliases="__${script}_aliases" 
+        eval "$aliases"
+    }
+
+    __declare() {
+        local names=( "${@%%=*}" )
+        unset -v ${names[@]/#-*/} 2>/dev/null || true
+        declare "$@"
+    }
+
+    __clean() {
+        local context="$1"
+        [[ -z "$context" ]] && return 0
+        
+        local funcs=( $(compgen -A function "__${context}") )
+        if [[ ${#funcs[@]} -gt 0 ]]; then
+            local funcs_str=" ${funcs[*]} "
+            unset -f ${funcs_str// __${context}_compl / } 2>/dev/null || true
+        fi
+
+        eval "local vars=( \${!__${context}@} )"
+        if [[ ${#vars[@]} -gt 0 ]]; then
+            unset -v "${vars[@]}" 2>/dev/null || true
+        fi
+    }
+
+    compl() {
+        local script="$1"
+        local cur="${COMP_WORDS[COMP_CWORD]}"
+        
+        local has_opts=0 has_flags=0
+        if declare -p "__OPTS_${script^^}" >/dev/null 2>&1; then local -n opts="__OPTS_${script^^}"; has_opts=1; 
+        elif declare -p "__OPTS_${script}" >/dev/null 2>&1; then local -n opts="__OPTS_${script}"; has_opts=1; fi
+        
+        if declare -p "__FLAGS_${script^^}" >/dev/null 2>&1; then local -n flags="__FLAGS_${script^^}"; has_flags=1; 
+        elif declare -p "__FLAGS_${script}" >/dev/null 2>&1; then local -n flags="__FLAGS_${script}"; has_flags=1; fi
+
+        local path=""
+        local context_words=()
+        for (( i=1; i < COMP_CWORD; i++ )); do
+            local word="${COMP_WORDS[i]}"
+            context_words+=("$word")
+            if [[ "$word" != -* ]]; then
+                if [[ -z "$path" ]]; then path="$word"
+                else path="${path}:${word}"
                 fi
             fi
-        }
+        done
+
+        local root_path="${path:-/}"
+        local suggestions=""
+
+        if (( has_opts )) && [[ -n "${opts[$root_path]}" ]]; then
+            suggestions+=" ${opts[$root_path]}"
+        fi
+
+        if (( has_flags )) && [[ -n "${flags[$root_path]}" ]]; then
+            suggestions+=" ${flags[$root_path]//:/ }"
+        fi
+
+        local custom_compl="__compl_${script}"
+        if declare -f "$custom_compl" >/dev/null; then
+            local custom_suggs=$($custom_compl "${context_words[@]}")
+            suggestions+=" $custom_suggs"
+        fi
+
+        COMPREPLY=()
+        read -ra all_words <<< "$suggestions"
+        
+        for word in "${all_words[@]}"; do
+            if [[ "$word" == "$cur"* ]]; then
+                local duplicate=0
+                for existing in "${COMPREPLY[@]}"; do
+                    if [[ "$existing" == "$word" ]]; then
+                        duplicate=1; break
+                    fi
+                done
+                (( duplicate == 0 )) && COMPREPLY+=("$word")
+            fi
+        done
+    }
 }

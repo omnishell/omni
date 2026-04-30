@@ -7,24 +7,25 @@ __lazy() {
         
         while [[ $# -gt 0 ]]; do
             case "$1" in 
-                --path=*) path="${1#*=}" ;; --path) path="$2"; shift ;;
-                --func=*) func="${1#*=}" ;; --func) func="$2"; shift ;;
-                --env=*)  t_env="${1#*=}" ;; --env) t_env="$2"; shift ;;
+                --path=*) path="${1#*=}" ;;
+                --path) path="$2"; shift ;;
+                --func=*) func="${1#*=}" ;; 
+                --func) func="$2"; shift ;;
+                --env=*)  t_env="${1#*=}" ;; 
+                --env) t_env="$2"; shift ;;
             esac
             shift
         done
 
         [[ -z "$t_env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
 
-        # If no path is provided, dynamically fetch it using the helper
         if [[ -z "$path" && -n "$name" ]]; then
             local data="$(__get lazy "$name" --env "$t_env")"
             if [[ $? -eq 0 ]]; then
-                # data is in the format "path:func"
                 path="${data%%:*}"
                 func="${data#*:}"
             else
-                return 1 # __get already prints the error message
+                return 1
             fi
         fi
 
@@ -45,5 +46,27 @@ __lazy() {
             echo "Error: lazy script data missing for '$name'." >&2
             return 1
         fi
+    }
+
+    __lazy_compl() {
+        local cur prev
+        COMPREPLY=()
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+        if [[ "$prev" == "--env" ]]; then
+            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$cur" == -* ]]; then
+            COMPREPLY=( $(compgen -W "--path --func --env" -- "$cur") )
+            return 0
+        fi
+    }
+
+    __lazy_init() {
+        __complete lazy
+        __clean    lazy
     }
 }
