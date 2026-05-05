@@ -1,0 +1,5 @@
+#! /bin/bash
+
+__types() {
+    __load file "*" --from "$__OMNI_CONTEXTS/types.d"
+}

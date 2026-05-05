@@ -1,0 +1,20 @@
+#! /bin/bash
+
+printf "                                   /00\n                                  |__/\n  /000000  /000000/0000  /0000000   /00\n /00__  00| 00_  00_  00| 00__  00| 00\n| 00  \\ 00| 00 \\ 00 \\ 00| 00  \\ 00| 00\n| 00  | 00| 00 | 00 | 00| 00  | 00| 00\n|  000000/| 00 | 00 | 00| 00  | 00| 00\n \\______/ |__/ |__/ |__/|__/  |__/|__/\n\nInstalling...\n"
+
+OMNI_PATH="$(cd "$(dirname "$0")" && pwd)"
+
+cat << EOF >> "$HOME/.bashrc"
+
+# ===== for omnishell =======
+__omni__() {
+    export __OMNI="$OMNI_PATH"
+    [[ -f "\$__OMNI/init" ]] && source "\$__OMNI/init"
+}
+__omni__
+# ==========================
+EOF
+
+source "$HOME/.bashrc"
+
+echo "Done!"

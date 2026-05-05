@@ -1,0 +1,120 @@
+#! /bin/bash
+
+__scripts() {
+    scripts() {
+        local cmd="$1"
+        case "$cmd" in
+            ls)
+                shift
+                local t_env="$ENV"
+                while [[ $# -gt 0 ]]; do
+                    case "$1" in --env) t_env="$2"; shift ;; esac
+                    shift
+                done
+                
+                [[ -z "$t_env" ]] && __log "no env was set" -t error -l scripts && return 1
+                if ! __is env "$t_env"; then __log "Invalid env '$t_env'" -t error -l scripts; return 1; fi
+                
+                __list scripts --env "$t_env" | tr ',' '\n' | grep -v '^$'
+                ;;
+            use|drop)
+                local action="$cmd"
+                local s_name="$2"
+                shift 2
+                
+                local t_env="$ENV"
+                while [[ $# -gt 0 ]]; do
+                    case "$1" in --env) t_env="$2"; shift ;; esac
+                    shift
+                done
+                
+                [[ -z "$t_env" ]] && __log "no env was set" -t error -l scripts && return 1
+                if ! __is env "$t_env"; then __log "Invalid env '$t_env'" -t error -l scripts; return 1; fi
+                if ! __is script "$s_name"; then __log "Invalid script '$s_name'" -t error -l scripts; return 1; fi
+                
+                local current="$(__list scripts --env "$t_env")"
+                
+                if [[ "$action" == "use" ]]; then
+                    if [[ ",${current}," != *",${s_name},"* ]]; then
+                         __update "ENV_SCRIPTS" "$t_env" "${current}${s_name}," "set"
+                         __log "Script '$s_name' added to env '$t_env'." -t success -l scripts
+                    fi
+                    
+                    if [[ "$t_env" == "$ENV" ]]; then
+                        __load "$s_name" --from "$__OMNI_SCRIPTS/$s_name" --lazy
+                    fi
+                elif [[ "$action" == "drop" ]]; then
+                    local new_val=$(echo ",${current}" | sed "s/,${s_name},/,/g" | sed "s/^,//")
+                    __update "ENV_SCRIPTS" "$t_env" "$new_val" "set"
+                    __log "Script '$s_name' dropped from env '$t_env'." -t success -l scripts
+                fi
+                ;;
+            exec)
+                shift
+                local s_name="$1"
+                [[ -z "$s_name" ]] && __log "<script> is mandatory for exec" -t error -l scripts && return 1
+                if ! __is script "$s_name"; then __log "Unknown script '$s_name'" -t error -l scripts; return 1; fi
+                
+                shift
+                local s_action="$1"
+                shift
+                
+                local t_env="$ENV"
+                local args=()
+                
+                while [[ $# -gt 0 ]]; do
+                     if [[ "$1" == "--env" ]]; then
+                          t_env="$2"
+                          args+=("$1" "$2")
+                          shift 2
+                     else
+                          args+=("$1")
+                          shift
+                     fi
+                done
+                
+                [[ -z "$t_env" ]] && __log "no env was set" -t error -l scripts && return 1
+                if ! __is env "$t_env"; then __log "Invalid env '$t_env'" -t error -l scripts; return 1; fi
+                
+                local current="$(__list scripts --env "$t_env")"
+                if [[ ",${current}," == *",${s_name},"* ]]; then
+                     eval "$s_name \"$s_action\" \"\${args[@]}\""
+                else
+                     __log "script '$s_name' is not enabled in env '$t_env'" -t error -l scripts
+                     return 1
+                fi
+                ;;
+            *)
+                __log "Unknown scripts command: $cmd" -t error -l scripts
+                return 1
+                ;;
+        esac
+    }
+
+    __scripts_compl() {
+        local cur prev base_cmd script_cmd
+        COMPREPLY=()
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+        base_cmd="${COMP_WORDS[1]}"
+
+        if [[ "$prev" == "scripts" || ( "$base_cmd" == "scripts" && "${COMP_CWORD}" == 2 ) ]]; then
+            COMPREPLY=( $(compgen -W "ls use drop get exec --help" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$prev" == "use" || "$prev" == "drop" || "$prev" == "get" || "$prev" == "exec" ]]; then
+            COMPREPLY=( $(compgen -W "${SCRIPTS//,/ }" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$prev" == "--env" ]]; then
+            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
+            return 0
+        fi
+    }
+
+    __scripts_init() {
+        __complete scripts
+    }
+}

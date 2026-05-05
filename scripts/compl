@@ -1,6 +1,8 @@
 #! /bin/bash
 
 __compl() {
+    __declare --dict COMPL
+
     compl() {
         local subcmd="$1"
         shift
@@ -8,13 +10,13 @@ __compl() {
         case "$subcmd" in
             spec)
                 local target="$1"
-                [[ -z "$target" ]] && echo "Error: compl spec requires a target function (e.g., __global)" >&2 && return 1
+                [[ -z "$target" ]] && __log "compl spec requires a target function (e.g., __global)" -t error -l compl && return 1
                 __omni_compl_spec "$target"
                 ;;
                 
             build)
                 local target="$1"
-                [[ -z "$target" ]] && echo "Error: compl build requires a target function (e.g., __global)" >&2 && return 1
+                [[ -z "$target" ]] && __log "compl build requires a target function (e.g., __global)" -t error -l compl && return 1
                 
                 local context="${target#__}"
                 local wrapper_name="__compl_wrapper_${context}"
@@ -30,7 +32,7 @@ __compl() {
             set)
                 local context="$1"
                 local compl_func="$2"
-                [[ -z "$context" || -z "$compl_func" ]] && echo "Error: compl set requires <context> and <compl_function>" >&2 && return 1
+                [[ -z "$context" || -z "$compl_func" ]] && __log "compl set requires <context> and <compl_function>" -t error -l compl && return 1
                 
                 COMPL["$context"]="$compl_func"
                 complete -o default -o bashdefault -F "$compl_func" "$context"
@@ -49,7 +51,7 @@ __compl() {
                     shift
                 done
                 
-                [[ -z "$t_env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
+                [[ -z "$t_env" ]] && __log "no env was set (use --env or export ENV)" -t error -l compl && return 1
                 
                 local target_func="__${context}"
                 if declare -F "$target_func" >/dev/null; then
@@ -57,13 +59,13 @@ __compl() {
                     local wrapper_func="$(compl build "$target_func")"
                     compl set "$context" "$wrapper_func"
                 else
-                    echo "Error: function '$target_func' not found. Cannot build completions." >&2
+                    __log "function '$target_func' not found. Cannot build completions." -t error -l compl
                     return 1
                 fi
                 ;;
                 
             *)
-                echo "Unknown compl command: $subcmd" >&2
+                __log "Unknown compl command: $subcmd" -t error -l compl
                 return 1
                 ;;
         esac
@@ -76,7 +78,7 @@ __compl() {
         local suffix="${func_name#__}"
         suffix="${suffix^^}"
         
-        __declare -gA "__OPTS_${suffix}" "__FLAGS_${suffix}"
+        __declare --dict "__OPTS_${suffix}" "__FLAGS_${suffix}"
         local -n opts="__OPTS_${suffix}"
         local -n flags="__FLAGS_${suffix}"
         
@@ -166,13 +168,8 @@ __compl() {
         local root_path="${path:-/}"
         local suggestions=""
 
-        if (( has_opts )) && [[ -n "${opts[$root_path]}" ]]; then
-            suggestions+=" ${opts[$root_path]}"
-        fi
-
-        if (( has_flags )) && [[ -n "${flags[$root_path]}" ]]; then
-            suggestions+=" ${flags[$root_path]//:/ }"
-        fi
+        if (( has_opts )) && [[ -n "${opts[$root_path]}" ]]; then suggestions+=" ${opts[$root_path]}"; fi
+        if (( has_flags )) && [[ -n "${flags[$root_path]}" ]]; then suggestions+=" ${flags[$root_path]//:/ }"; fi
 
         local custom_compl="__${script}_compl"
         if declare -f "$custom_compl" >/dev/null; then
@@ -203,30 +200,13 @@ __compl() {
         prev="${COMP_WORDS[COMP_CWORD-1]}"
         base_cmd="${COMP_WORDS[1]}"
 
-        if [[ "${COMP_CWORD}" == 1 ]]; then
-            COMPREPLY=( $(compgen -W "spec build set use" -- "$cur") )
-            return 0
-        fi
-
-        if [[ "$prev" == "use" || "$prev" == "spec" || "$prev" == "build" ]]; then
-            COMPREPLY=( $(compgen -W "${SCRIPTS//,/ }" -- "$cur") )
-            return 0
-        fi
-
-        if [[ "$prev" == "--env" ]]; then
-            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
-            return 0
-        fi
-
-        if [[ "$base_cmd" == "use" && "$cur" == -* ]]; then
-            COMPREPLY=( $(compgen -W "--env" -- "$cur") )
-            return 0
-        fi
+        if [[ "${COMP_CWORD}" == 1 ]]; then COMPREPLY=( $(compgen -W "spec build set use" -- "$cur") ); return 0; fi
+        if [[ "$prev" == "use" || "$prev" == "spec" || "$prev" == "build" ]]; then COMPREPLY=( $(compgen -W "${SCRIPTS//,/ }" -- "$cur") ); return 0; fi
+        if [[ "$prev" == "--env" ]]; then COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") ); return 0; fi
+        if [[ "$base_cmd" == "use" && "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "--env" -- "$cur") ); return 0; fi
     }
 
     __compl_init() {
-        __declare -gA COMPL
         __complete compl
-        __clean    compl
     }
 }

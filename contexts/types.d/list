@@ -1,0 +1,78 @@
+#! /bin/bash
+
+types.list() {
+    local decl="$*"
+    
+    local name="${decl%%=*}"
+    name="${name// /}"
+    
+    local vals="${decl#*=}"
+    vals="${vals#"${vals%%[![:space:]]*}"}"
+    
+    local current=()
+
+    if [[ "$decl" == *"="* ]]; then
+        if [[ "$vals" =~ ^\[(.*)\]$ ]]; then
+            local inner="${BASH_REMATCH[1]}"
+            inner="${inner//, /|}"; inner="${inner//,/|}"
+            local IFS='|'; current=( $inner ); local IFS=$' \t\n'
+        else
+            current=( $(eval "$vals") )
+        fi
+    fi
+
+    __new "types.list" "$name" "${current[@]}"
+}
+
+types.list.append() {
+    local name="$1"; shift
+    local current=( $($name) )
+    current+=( "$@" )
+    
+    __set "$name" "${current[@]}"
+}
+
+types.list.rm() { types.list.remove "$@"; }
+types.list.remove() {
+    local name="$1"; shift
+    local current=( $($name) )
+    
+    local -A rm_dict
+    for rm_item in "$@"; do rm_dict["$rm_item"]=1; done
+    
+    local new_arr=()
+    for item in "${current[@]}"; do
+        [[ -z "${rm_dict[$item]:-}" ]] && new_arr+=( "$item" )
+    done
+    
+    __set "$name" "${new_arr[@]}"
+}
+
+types.list.extend() {
+    local name="$1"; shift
+    local other="$1"
+    local current=( $($name) )
+    
+    local additional=()
+    if declare -f "$other" >/dev/null 2>&1; then
+        additional=( $($other) )
+    else
+        additional=( "$other" )
+    fi
+    
+    current+=( "${additional[@]}" )
+    __set "$name" "${current[@]}"
+}
+
+types.list.reverse() {
+    local name="$1"; shift
+    local current=( $($name) )
+    local reversed=()
+    
+    local len=${#current[@]}
+    for (( i=len-1; i>=0; i-- )); do
+        reversed+=( "${current[i]}" )
+    done
+    
+    __set "$name" "${reversed[@]}"
+}

@@ -1,28 +1,27 @@
 #! /bin/bash
 
 __init__() {
-    export __OMNI_SH=$__OMNI/sh
+    export __OMNI_MODS=$__OMNI/mods
     export __OMNI_CONF=$__OMNI/conf
     export __OMNI_SCRIPTS=$__OMNI/scripts
+    export __OMNI_TOOLS=$__OMNI/tools
+    export __OMNI_CONTEXTS=$__OMNI/contexts
 
+    mkdir -p "$__OMNI_SCRIPTS" "$__OMNI_TOOLS" 2>/dev/null || true
     export __OMNIRC="${__OMNIRC:-$HOME/.omnirc}"
 
-    export SCRIPTS=$(shopt -s nullglob; files=("$__OMNI_SCRIPTS"/*); files=("${files[@]##*/}"); IFS=,; echo "${files[*]}")
+    source "$__OMNI_MODS/helper" && __helper
 
-    for mod in builtins helper envs scripts omni custom; do
-        if [[ -f "$__OMNI_SH/$mod" ]]; then
-            source "$__OMNI_SH/$mod"
-            if declare -f "__${mod}" > /dev/null; then
-                "__${mod}"
-                if declare -f "__${mod}_init" > /dev/null; then
-                    "__${mod}_init"
-                fi
-                unset -f "__${mod}" "__${mod}_init" "__${mod}_aliases" 2>/dev/null || true
-            fi
-        fi
+    for mod in helper builtins; do
+        __load "$mod" --from "$__OMNI_MODS/$mod"
+    done
+
+    for mod in envs scripts tools providers contexts run omni custom; do 
+        __load "$mod" --from "$__OMNI_MODS/$mod" --lazy
     done
 
     [[ -f "$__OMNIRC" ]] && source "$__OMNIRC"
+    export SCRIPTS=$(shopt -s nullglob; files=("$__OMNI_SCRIPTS"/*); files=("${files[@]##*/}"); IFS=,; echo "${files[*]}")
 
     export ENV="${ENV:-$__ENV}"
     if [[ -n "$ENV" ]]; then

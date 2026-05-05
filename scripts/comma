@@ -2,52 +2,130 @@
 
 __comma() {
     comma() {
-        local subcmd="$1"
-        local alias_name="$2"
-        shift 2
+        local cmd="$1"
+        local is_explicit=0
 
-        local t_env="$ENV"
-        local alias_path=""
-        
-        if [[ "$subcmd" == "set" && $# -gt 0 && "$1" != -* ]]; then
-            alias_path="$1"
+        if [[ "$cmd" == "--" ]]; then
+            is_explicit=1
             shift
+            cmd="$1"
         fi
-
-        while [[ $# -gt 0 ]]; do
-            case "$1" in
-                --env=*)  t_env="${1#*=}" ;;
-                --env) t_env="$2"; shift ;;
-                --path=*) alias_path="${1#*=}" ;; 
-                --path) alias_path="$2"; shift ;;
+        
+        if (( ! is_explicit )); then
+            if [[ "$cmd" == "--help" || "$cmd" == "-h" ]]; then
+                echo "Usage:"
+                echo "  comma set <comma> -p/--path <path> [-c/--cmd <cmd>] [-e/--env <env>]"
+                echo "  comma rm <comma> [-e/--env <env>]"
+                echo "  comma -- <comma> [-e/--env <env>]"
+                echo ""
+                echo "Aliases:"
+                echo "  ,   -> comma --"
+                echo "  ,a  -> comma set"
+                echo "  ,d  -> comma rm"
+                return 0
+            fi
+            
+            case "$cmd" in
+                set)
+                    shift
+                    local alias_name="$1"
+                    shift
+                    local target_path="" target_cmd="" t_env="$ENV"
+                    
+                    while [[ $# -gt 0 ]]; do
+                        case "$1" in
+                            --path=*|-p=*) target_path="${1#*=}" ;;
+                            --path|-p) target_path="$2"; shift ;;
+                            --command=*|--cmd=*|-c=*) target_cmd="${1#*=}" ;;
+                            --command|--cmd|-c) target_cmd="$2"; shift ;;
+                            --env=*|-e=*) t_env="${1#*=}" ;;
+                            --env|-e) t_env="$2"; shift ;;
+                        esac
+                        shift
+                    done
+                    
+                    [[ -z "$alias_name" ]] && __log "<comma> alias is mandatory" -t error -l comma && return 1
+                    [[ -z "$target_path" ]] && __log "--path is mandatory" -t error -l comma && return 1
+                    [[ -z "$t_env" ]] && __log "no env was set" -t error -l comma && return 1
+                    
+                    if [[ -z "$target_cmd" ]]; then
+                        local env_scripts="${ENV_SCRIPTS[$t_env]:-}"
+                        if [[ ",${env_scripts}," == *",dot,"* ]]; then
+                            target_cmd="dot"
+                        else
+                            target_cmd="cd"
+                        fi
+                    fi
+                    
+                    local current="${ENV_COMMA[$t_env]:-}"
+                    local new_val=$(echo ",${current}" | sed -E "s/,${alias_name}:[^,]*/,/g" | sed "s/^,//")
+                    new_val="${new_val}${alias_name}:${target_path}:${target_cmd},"
+                    
+                    __update "ENV_COMMA" "$t_env" "$new_val" "set"
+                    __log "Registered '$alias_name' -> '$target_cmd $target_path' in env '$t_env'." -t success -l comma
+                    return 0
+                    ;;
+                    
+                rm)
+                    shift
+                    local alias_name="$1"
+                    shift
+                    local t_env="$ENV"
+                    while [[ $# -gt 0 ]]; do case "$1" in --env|-e) t_env="$2"; shift ;; esac; shift; done
+                    
+                    [[ -z "$alias_name" ]] && __log "<comma> alias is mandatory" -t error -l comma && return 1
+                    [[ -z "$t_env" ]] && __log "no env was set" -t error -l comma && return 1
+                    
+                    local current="${ENV_COMMA[$t_env]:-}"
+                    local new_val=$(echo ",${current}" | sed -E "s/,${alias_name}:[^,]*/,/g" | sed "s/^,//")
+                    
+                    __update "ENV_COMMA" "$t_env" "$new_val" "set"
+                    __log "Removed '$alias_name' from env '$t_env'." -t success -l comma
+                    return 0
+                    ;;
+                *)
+                    __log "Unknown comma command: $cmd" -t error -l comma
+                    return 1
+                    ;;
+            esac
+        fi
+        
+        local target="$1"
+        [[ -z "$target" ]] && comma --help && return 1
+        shift
+        
+        local t_env="$ENV"
+        local args=()
+        
+        while [[ $# -gt 0 ]]; do 
+            case "$1" in 
+                --env|-e) t_env="$2"; shift ;; 
+                *) args+=("$1") ;;
             esac
             shift
         done
-
-        [[ -z "$t_env" ]] && echo "Error: no env was set (use --env or export ENV)" >&2 && return 1
-
-        if [[ "$subcmd" == "set" ]]; then
-            [[ -z "$alias_path" ]] && echo "Error: path is mandatory for comma set" >&2 && return 1
-            omni script comma set "$alias_name" --env "$t_env" --path "$alias_path"
-            
-        elif [[ "$subcmd" == "rm" ]]; then
-            omni script comma rm "$alias_name" --env "$t_env"
-
-        elif [[ "$subcmd" == "dot" ]]; then
-            local found_path="$(__get comma "$alias_name" --env "$t_env")"
-            if [[ $? -eq 0 && -n "$found_path" ]]; then
-                dot "$found_path"
-            else
-                return 1
-            fi
-            
-        else
-            echo "Unknown comma command: $subcmd" >&2
+        
+        [[ -z "$t_env" ]] && __log "no env was set" -t error -l comma && return 1
+        
+        local current="${ENV_COMMA[$t_env]:-}"
+        
+        local extract=",${current}"
+        extract="${extract##*,${target}:}"
+        local entry="${extract%%,*}"
+        
+        if [[ -z "$entry" || "$entry" == ",${current}" ]]; then
+            __log "found no registered comma alias for '$target' in env '$t_env'." -t error -l comma
             return 1
         fi
+        
+        local target_path="${entry%%:*}"
+        local exec_cmd="${entry#*:}"
+        
+        eval "$exec_cmd \"$target_path\" \"\${args[@]}\""
     }
+
     __comma_aliases() {
-        alias ,="comma dot"
+        alias ,="comma --"
         alias ,a="comma set"
         alias ,d="comma rm"
     }
@@ -60,38 +138,23 @@ __comma() {
         base_cmd="${COMP_WORDS[1]}"
 
         if [[ "${COMP_CWORD}" == 1 ]]; then
-            COMPREPLY=( $(compgen -W "set rm dot" -- "$cur") )
+            COMPREPLY=( $(compgen -W "set rm --help --" -- "$cur") )
             return 0
         fi
 
-        if [[ "$prev" == "--env" ]]; then
-            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
+        if [[ "$prev" == "--" || "$prev" == "rm" ]]; then
+            local current="${ENV_COMMA[$ENV]:-}"
+            local keys=$(echo "$current" | tr ',' '\n' | cut -d: -f1 | grep -v '^$')
+            COMPREPLY=( $(compgen -W "$keys" -- "$cur") )
             return 0
         fi
 
-        if [[ "$prev" == "rm" || "$prev" == "dot" ]]; then
-            local current_env="${ENV:-$ENV_GLOBAL}"
-            local commas="$(__list comma --env "$current_env" 2>/dev/null)"
-            if [[ -n "$commas" ]]; then
-                COMPREPLY=( $(compgen -W "$(echo "$commas" | tr ',' '\n' | cut -d: -f1 | tr '\n' ' ')" -- "$cur") )
-            fi
-            return 0
-        fi
-
-        if [[ "$cur" == -* ]]; then
-            if [[ "$base_cmd" == "set" ]]; then
-                COMPREPLY=( $(compgen -W "--path --env" -- "$cur") )
-            else
-                COMPREPLY=( $(compgen -W "--env" -- "$cur") )
-            fi
-            return 0
-        fi
+        if [[ "$base_cmd" == "set" && "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "--path -p --cmd -c --env -e" -- "$cur") ); return 0; fi
+        if [[ "$prev" == "--env" || "$prev" == "-e" ]]; then COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") ); return 0; fi
     }
 
     __comma_init(){
-        __aliases  comma
+        __aliases comma
         __complete comma
-        __clean    comma
     }
-    
 }

@@ -19,7 +19,7 @@ __dot() {
                     shift
                     ls "$@"
                 elif [[ -f "$1" ]]; then
-                    open "$1"
+                    open -- "$1"
                 else
                     ls "$@"
                 fi
@@ -33,7 +33,6 @@ __dot() {
         alias .,='dot ,'
         alias .f='lf'
         alias .d='ld'
-
     }
 
     __dot_compl() {

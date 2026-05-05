@@ -1,0 +1,51 @@
+#! /bin/bash
+
+__omni() {
+    omni() {
+        local cmd="$1"
+        if [[ -z "$cmd" ]]; then
+            echo "Usage: omni <command> [args]"
+            return 1
+        fi
+        shift
+        case "$cmd" in
+            envs|scripts|tools|providers|contexts|run)
+                "$cmd" "$@"
+                ;;
+            *)
+                __log "Unknown omni command: $cmd" -t error -l omni
+                return 1
+                ;;
+        esac
+    }
+
+    __omni_compl() {
+        local cur="${COMP_WORDS[COMP_CWORD]}"
+        
+        if [[ "${COMP_CWORD}" == 1 ]]; then
+            COMPREPLY=( $(compgen -W "envs scripts tools providers contexts run" -- "$cur") )
+            return 0
+        fi
+
+        local subcmd="${COMP_WORDS[1]}"
+        if [[ "$subcmd" =~ ^(envs|scripts|tools|providers|contexts|run)$ ]]; then
+            local sub_compl="__${subcmd}_compl"
+            if declare -f "$sub_compl" >/dev/null; then
+                local -a COMP_WORDS_BACKUP=("${COMP_WORDS[@]}")
+                local COMP_CWORD_BACKUP=$COMP_CWORD
+
+                COMP_WORDS=( "${COMP_WORDS[@]:1}" )
+                ((COMP_CWORD--))
+
+                "$sub_compl"
+
+                COMP_WORDS=("${COMP_WORDS_BACKUP[@]}")
+                COMP_CWORD=$COMP_CWORD_BACKUP
+            fi
+        fi
+    }
+
+    __omni_init() {
+        __complete omni
+    }
+}

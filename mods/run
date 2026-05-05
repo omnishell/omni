@@ -1,0 +1,56 @@
+#! /bin/bash
+
+__run() {
+    run() {
+        local target="" t_env=""
+        
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*)  t_env="${1#*=}" ;;
+                *) 
+                    if [[ -z "$target" ]]; then target="$1"
+                    else target="$target $1"; fi
+                    ;;
+            esac
+            shift
+        done
+
+        [[ -z "$target" ]] && __log "<string> (file or command) is mandatory" -t error -l run && return 1
+
+        (
+            if [[ -n "$t_env" && "$t_env" != "${ENV:-}" ]]; then
+                envs use "$t_env" >/dev/null 2>&1
+            fi
+
+            if [[ -f "$target" ]]; then
+                source "$target"
+            else
+                eval "$target"
+            fi
+        )
+    }
+
+    __run_compl() {
+        local cur prev
+        COMPREPLY=()
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+        if [[ "$prev" == "-e" || "$prev" == "--env" ]]; then
+            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$cur" == -* ]]; then
+            COMPREPLY=( $(compgen -W "--env -e" -- "$cur") )
+            return 0
+        fi
+        
+        compopt -o default
+    }
+
+    __run_init() {
+        __complete run
+    }
+}

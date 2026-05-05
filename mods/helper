@@ -1,0 +1,433 @@
+#! /bin/bash
+
+__helper() {
+    declare -g -a __MODULE_CLEANUPS=()
+
+    __log() {
+        local msg="" log_type="log" logger=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -t|--type)   log_type="$2"; shift ;;
+                --type=*)    log_type="${1#*=}" ;;
+                -l|--logger) logger="$2"; shift ;;
+                --logger=*)  logger="${1#*=}" ;;
+                *) 
+                    if [[ -z "$msg" ]]; then msg="$1"
+                    else msg="${msg} $1"; fi
+                    ;;
+            esac
+            shift
+        done
+
+        if [[ -z "$msg" ]]; then echo "error: missing <message>" >&2; return 1; fi
+
+        local prefix=""
+        if [[ -n "$logger" && -n "$log_type" ]]; then prefix="${logger}:${log_type}: "
+        elif [[ -n "$logger" ]]; then prefix="${logger}: "
+        elif [[ -n "$log_type" ]]; then prefix="${log_type}: "
+        fi
+
+        if [[ "${log_type,,}" == "error" ]]; then echo -e "${prefix}${msg}" >&2
+        else echo -e "${prefix}${msg}"; fi
+    }
+
+    __declare() {
+        local args=( "${@/--dict/-gA}" )
+        args=( "${args[@]/--array/-ga}" )
+        local names=( "${args[@]%%=*}" )
+        unset -v ${names[@]/#-*/} 2>/dev/null || true
+        declare "${args[@]}"
+    }
+
+    __clean() {
+        local context="$1"
+        [[ -z "$context" ]] && return 0
+        
+        local funcs=( $(compgen -A function "__${context}") )
+        if [[ ${#funcs[@]} -gt 0 ]]; then
+            local funcs_str=" ${funcs[*]} "
+            unset -f ${funcs_str// __${context}_compl / } 2>/dev/null || true
+        fi
+
+        eval "local vars=( \${!__${context}@} )"
+        if [[ ${#vars[@]} -gt 0 ]]; then
+            unset -v "${vars[@]}" 2>/dev/null || true
+        fi
+    }
+
+    __lazy_bind() {
+        local name="$1" path="$2" attrs="${3:-}"
+        
+        local unset_list="${name} __${name}_compl"
+        for attr in ${attrs//,/ }; do
+            unset_list+=" ${name}.${attr}"
+        done
+
+        local core_stub="
+            unset -f $unset_list 2>/dev/null || true
+            source \"$path\"
+            __${name} 2>/dev/null || true
+            __clean \"${name}\"
+        "
+
+        eval "
+        ${name}() {
+            $core_stub
+            ${name} \"\$@\"
+        }
+        __${name}_compl() {
+            $core_stub
+            __${name}_compl \"\$@\"
+        }
+        "
+
+        for attr in ${attrs//,/ }; do
+            eval "
+            ${name}.${attr}() {
+                $core_stub
+                ${name}.${attr} \"\$@\"
+            }
+            "
+        done
+    }
+
+    
+    __load() {
+        local type="$1"
+        shift
+        local targets=() path="" is_lazy=0
+
+        if [[ "$type" == "*" || "$type" == *,* ]]; then
+            set -- "$type" "$@"
+            type="file"
+        elif [[ "$type" != "context" && "$type" != "file" && "$type" != "script" && "$type" != "tool" ]]; then
+            targets=("$type")
+            type="legacy"
+        fi
+
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --from) path="$2"; shift ;;
+                -l|--lazy) is_lazy=1 ;;
+                *)
+                    if [[ "$type" != "legacy" ]]; then
+                        IFS=',' read -ra parts <<< "$1"
+                        for p in "${parts[@]}"; do
+                            p="${p#"${p%%[![:space:]]*}"}"
+                            p="${p%"${p##*[![:space:]]}"}"
+                            [[ -n "$p" ]] && targets+=("$p")
+                        done
+                    fi
+                    ;;
+            esac
+            shift
+        done
+
+        if [[ "$type" == "file" && ${#targets[@]} -eq 0 ]]; then
+            targets=("*")
+        fi
+
+        [[ ${#targets[@]} -eq 0 || -z "$path" ]] && return 1
+
+        if [[ "${targets[0]}" == "*" ]]; then
+            local lazy_flag=""
+            (( is_lazy )) && lazy_flag="-l"
+            shopt -s nullglob
+            for f in "$path"/*; do
+                if [[ -f "$f" ]]; then
+                    __load "$type" "$(basename "$f")" --from "$path" $lazy_flag
+                fi
+            done
+            shopt -u nullglob
+            return 0
+        fi
+
+        if [[ ${#targets[@]} -gt 1 ]]; then
+            local lazy_flag=""
+            (( is_lazy )) && lazy_flag="-l"
+            for t in "${targets[@]}"; do
+                __load "$type" "$t" --from "$path" $lazy_flag
+            done
+            return 0
+        fi
+
+        local target="${targets[0]}"
+        local full_path="$path"
+        
+        if [[ -d "$full_path" ]]; then
+            full_path="${full_path%/}/$target"
+        fi
+        
+        [[ ! -f "$full_path" ]] && return 1
+
+        if [[ "$type" == "context" ]]; then
+            source "$full_path"
+            
+            local has_constructor=0
+            if declare -f "__${target}" > /dev/null; then
+                has_constructor=1
+                "__${target}"
+                if declare -f "__${target}_init" > /dev/null; then "__${target}_init"; fi
+            fi
+
+            local funcs=$(compgen -A function "${target}.")
+            local attrs=""
+            for f in $funcs; do attrs+="${f#$target.},"; done
+            attrs="${attrs%,}"
+            CONTEXTS["$target"]="$attrs"
+
+            if (( is_lazy )); then __lazy_bind "$target" "$full_path" "$attrs"
+            else if (( has_constructor )); then __clean "$target"; fi; fi
+
+        elif [[ "$type" == "file" ]]; then
+            if (( is_lazy )); then
+                local before_arr=( $(compgen -A function) )
+                local -A before_funcs=()
+                for f in "${before_arr[@]}"; do 
+                    before_funcs["$f"]=1
+                done
+                
+                source "$full_path"
+                
+                local after_arr=( $(compgen -A function) )
+                local new_funcs=""
+                for f in "${after_arr[@]}"; do
+                    if [[ -z "${before_funcs["$f"]:-}" ]]; then
+                        new_funcs="${new_funcs}${new_funcs:+ }$f"
+                    fi
+                done
+                
+                if [[ -n "$new_funcs" ]]; then
+                    __lazy_bind_funcs "$full_path" "$new_funcs"
+                fi
+            else
+                source "$full_path"
+            fi
+
+        else
+            source "$full_path"
+            
+            local has_constructor=0
+            if declare -f "__${target}" > /dev/null; then
+                has_constructor=1
+                "__${target}"
+                if declare -f "__${target}_init" > /dev/null; then "__${target}_init"; fi
+            fi
+
+            if (( is_lazy )); then __lazy_bind "$target" "$full_path" ""
+            else if (( has_constructor )); then __clean "$target"; fi; fi
+        fi
+    }
+
+    __complete() {
+        local script="$1"
+        local compl="__${script}_compl"
+        eval "complete -o default -o bashdefault -F $compl $script"
+    } 
+
+    __complete() {
+        local script="$1"
+        local compl="__${script}_compl"
+        eval "complete -o default -o bashdefault -F $compl $script"
+    }
+
+    __aliases() {
+        local script="$1"
+        local aliases="__${script}_aliases"
+        eval "$aliases"
+    }
+
+    __cleanup_module() {
+        for cmd in "${__MODULE_CLEANUPS[@]}"; do eval "$cmd"; done
+        __MODULE_CLEANUPS=()
+    }
+
+    __update() {
+        local array_name="$1" key="$2" value="$3" mode="$4"
+        local rcfile="${__OMNIRC:-$HOME/.omnirc}"
+        touch "$rcfile"
+
+        if [[ "$mode" == "rm" ]]; then
+            sed -i "/^${array_name}\[\"$key\"\]=/d" "$rcfile"
+            eval "unset ${array_name}[\"$key\"]"
+        else
+            local new_line="${array_name}[\"$key\"]=\"$value\""
+            if grep -q "^${array_name}\[\"$key\"\]=" "$rcfile"; then
+                sed -i "s|^${array_name}\[\"$key\"\]=.*|$new_line|" "$rcfile"
+            else
+                echo "$new_line" >> "$rcfile"
+            fi
+            eval "$new_line"
+        fi
+    }
+
+    __is() {
+        local type="$1" name="$2" flag="${3:-}"
+        [[ -z "$name" ]] && return 1
+        case "$type" in
+            env)      [[ -n "${ENVS[$name]}" ]] && return 0 || return 1 ;;
+            script)   if [[ ",${SCRIPTS}," == *",${name},"* ]]; then return 0; else return 1; fi ;;
+            tool)     if declare -p TOOLS >/dev/null 2>&1 && [[ -n "${TOOLS[$name]}" ]]; then return 0; else return 1; fi ;;
+            provider) [[ -n "${PROVIDERS[$name]}" ]] && return 0 || return 1 ;;
+            context)
+                local is_dec=0 is_pure=0
+                [[ "$flag" == "-d" || "$flag" == "--decorated" ]] && is_dec=1
+                [[ "$flag" == "-p" || "$flag" == "--pure" ]] && is_pure=1
+                
+                if [[ -v "CONTEXTS[$name]" && -n "${CONTEXTS[$name]}" ]]; then
+                    local attrs="${CONTEXTS[$name]}"
+                    if (( is_dec )); then [[ -n "$attrs" ]] && return 0 || return 1; fi
+                    if (( is_pure )); then [[ -z "$attrs" ]] && return 0 || return 1; fi
+                    return 0
+                fi
+                
+                local contexts_dir="${__OMNI_CONTEXTS:-$__OMNI/contexts}"
+                local path=""
+                if [[ -f "$name" ]]; then path="$name"
+                elif [[ -f "$contexts_dir/$name" ]]; then path="$contexts_dir/$name"
+                elif [[ -f "$__OMNI_TOOLS/$name" ]]; then path="$__OMNI_TOOLS/$name"
+                fi
+
+                if [[ -n "$path" ]]; then
+                    local basename=$(basename "$name")
+                    local has_init=0 has_attrs=0
+                    
+                    grep -qE "^ *__${basename}_init" "$path" && has_init=1
+                    grep -qE "^[[:space:]]*(function[[:space:]]+)?${basename}\." "$path" && has_attrs=1
+                    
+                    # 2. Deep Subshell Evaluation: Force Export Env to resolve partials!
+                    if [[ $has_init == 0 || $has_attrs == 0 ]]; then
+                         local sub_funcs=$( (
+                             export __OMNI_CONTEXTS="${__OMNI_CONTEXTS:-$__OMNI/contexts}"
+                             source "$path" 2>/dev/null
+                             if declare -f "__${basename}" >/dev/null; then "__${basename}" >/dev/null 2>&1; fi
+                             declare -F
+                         ) )
+                         echo "$sub_funcs" | grep -q "declare -f __${basename}_init" && has_init=1
+                         echo "$sub_funcs" | grep -q "declare -f ${basename}\." && has_attrs=1
+                    fi
+                    
+                    [[ $has_init == 0 ]] && return 1 
+                    
+                    if (( is_dec )); then [[ $has_attrs == 1 ]] && return 0 || return 1; fi
+                    if (( is_pure )); then [[ $has_attrs == 0 ]] && return 0 || return 1; fi
+                    return 0
+                fi
+                return 1
+                ;;
+        esac
+        return 1
+    }
+
+    __list() {
+        local type="$1"
+        shift
+        local t_env="$ENV"
+        
+        while [[ $# -gt 0 ]]; do
+            case "$1" in --env) t_env="$2"; shift ;; esac
+            shift
+        done
+        
+        [[ -z "$t_env" ]] && __log "no env specified" -t error -l helper && return 1
+
+        local config=""
+        case "$type" in
+            scripts)   config="${ENV_SCRIPTS[$t_env]}"   ;;
+            tools)     config="${ENV_TOOLS[$t_env]}"     ;;
+            providers) config="${ENV_PROVIDERS[$t_env]}" ;;
+            global)    config="${ENV_GLOBAL[$t_env]}"    ;;
+            lazy)      config="${ENV_LAZY[$t_env]}"      ;;
+            comma)     config="${ENV_COMMA[$t_env]}"     ;;
+            open)      config="${ENV_OPEN[$t_env]}"      ;;
+            *)         __log "unknown list type $type" -t error -l helper; return 1 ;;
+        esac
+        echo "$config"
+    }
+
+    __attrs() {
+        local name="$1"
+        
+        if [[ -v "CONTEXTS[$name]" && -n "${CONTEXTS[$name]}" ]]; then
+            echo "${CONTEXTS[$name]:-}" | tr ',' ' '
+            return 0
+        fi
+        
+        local path=""
+        local contexts_dir="${__OMNI_CONTEXTS:-$__OMNI/contexts}"
+        if [[ -f "$name" ]]; then path="$name"
+        elif [[ -f "$contexts_dir/$name" ]]; then path="$contexts_dir/$name"
+        elif [[ -f "$__OMNI_TOOLS/$name" ]]; then path="$__OMNI_TOOLS/$name"
+        fi
+
+        if [[ -n "$path" ]]; then
+            local funcs=$( (
+                export __OMNI_CONTEXTS="${__OMNI_CONTEXTS:-$__OMNI/contexts}"
+                source "$path" 2>/dev/null
+                if declare -f "__${name}" >/dev/null; then "__${name}" >/dev/null 2>&1; fi
+                compgen -A function "${name}."
+            ) | sed -E "s/^${name}\.//" | sort -u | tr '\n' ' ' | sed 's/ *$//' )
+            
+            if [[ -n "$funcs" ]]; then
+                echo "$funcs"
+                return 0
+            fi
+        fi
+        return 1
+    } 
+
+    __get() {
+        local ctx="$1" attr="${2:-}"
+        if [[ -n "$attr" ]]; then
+            echo "${ctx}.${attr}"
+            return 0
+        fi
+        return 1
+    }
+
+    __new() {
+        local class_name="$1"
+        local obj_name="$2"
+        shift 2
+        local current=( "$@" )
+        
+        eval "
+        $obj_name() {
+            local _arr=(${current[@]@Q})
+            echo \"\${_arr[@]}\"
+        }
+        "
+        declare -g "$obj_name"="${current[*]}"
+        
+        local methods=$(compgen -A function "${class_name}.")
+        local cleanup_funcs="$obj_name"
+        
+        for method in $methods; do
+            local method_name="${method#${class_name}.}"
+            
+            eval "
+            ${obj_name}.${method_name}() {
+                ${method} \"$obj_name\" \"\$@\"
+            }
+            "
+            cleanup_funcs+=" ${obj_name}.${method_name}"
+        done
+        
+        __MODULE_CLEANUPS+=("{ unset -f $cleanup_funcs 2>/dev/null; unset -v $obj_name 2>/dev/null; } || true")
+    }
+
+    __set() {
+        local obj_name="$1"
+        shift
+        local current=( "$@" )
+        
+        eval "
+        $obj_name() {
+            local _arr=(${current[@]@Q})
+            echo \"\${_arr[@]}\"
+        }
+        "
+        declare -g "$obj_name"="${current[*]}"
+        echo "${current[@]}"
+    }
+}
