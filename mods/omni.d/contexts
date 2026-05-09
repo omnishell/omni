@@ -94,30 +94,23 @@ COMMANDS:
     }
 
     __omni__.contexts.__compl__() {
-        local cur="${COMP_WORDS[COMP_CWORD]}"
-        local prev="${COMP_WORDS[COMP_CWORD-1]}"
-        local base_cmd="${COMP_WORDS[1]:-}"
-
+        local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}" base_cmd="${COMP_WORDS[1]:-}"
         if [[ "${COMP_CWORD}" == 1 ]]; then 
-            COMPREPLY=( $(compgen -W "ls get" -- "$cur") )
+            COMPREPLY=( $(compgen -W "ls get --help -h" -- "$cur") )
             return 0
         fi
-
         if [[ "$prev" == "--env" ]]; then
             COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
             return 0
         fi
-
         local flags=""
         case "$base_cmd" in
             ls) flags="--env --all" ;;
         esac
-
         if [[ "$base_cmd" == "ls" ]]; then
             COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
             return 0
         fi
-
         if [[ "$base_cmd" == "get" ]]; then 
             if [[ "${COMP_CWORD}" == 2 ]]; then
                 local ctxs="$(__omni__.contexts.ls --all 2>/dev/null)"

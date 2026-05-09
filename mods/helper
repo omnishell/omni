@@ -45,12 +45,15 @@ __helper__() {
         local context="$1"
         [[ -z "$context" ]] && return 0
         unset -f "__${context}__" 2>/dev/null || true
+        
         local funcs=( $(compgen -A function "${context}.") )
+        local f
         for f in "${funcs[@]}"; do
-            if [[ "$f" != "${context}.__compl__" ]]; then
+            if [[ "$f" != "${context}.__compl__" && "$f" != "${context}.__help__" ]]; then
                 unset -f "$f" 2>/dev/null || true
             fi
         done
+        
         eval "local vars=( \${!__${context}@} )"
         if [[ ${#vars[@]} -gt 0 ]]; then
             unset -v "${vars[@]}" 2>/dev/null || true
@@ -103,10 +106,10 @@ __helper__() {
         fi
     }
 
-    __lazy_bind() {
+    __lazy() {
         local name="$1" path="$2"
         local core_stub="
-            unset -f ${name} ${name}.__compl__ 2>/dev/null || true
+            unset -f ${name} ${name}.__compl__ ${name}.__help__ 2>/dev/null || true
             source \"$path\"
             __${name}__ 2>/dev/null || true
             __init \"${name}\"
@@ -122,8 +125,12 @@ __helper__() {
             $core_stub
             ${name}.__compl__ \"\$@\"
         }
+        ${name}.__help__() {
+            $core_stub
+            ${name}.__help__ \"\$@\"
+        }
         "
-    }
+    } 
 
     __init() {
         if declare -f "${1}.__init__" >/dev/null; then "${1}.__init__"; fi
@@ -357,7 +364,7 @@ __helper__() {
             local funcs=$(compgen -A function "${target}."); local attrs=""
             for f in $funcs; do local attr_name="${f#$target.}"; [[ "$attr_name" != __*__ ]] && attrs+="${attr_name},"; done
             attrs="${attrs%,}"; CONTEXTS["$target"]="$attrs"
-            if (( is_lazy )); then __lazy_bind "$target" "$full_path"; fi
+            if (( is_lazy )); then __lazy "$target" "$full_path"; fi
             __clean "$target"
         elif [[ "$type" == "file" ]]; then
             if (( is_lazy )); then
@@ -366,12 +373,12 @@ __helper__() {
                 source "$full_path"
                 local after_arr=( $(compgen -A function) ); local new_funcs=""
                 for f in "${after_arr[@]}"; do [[ -z "${before_funcs["$f"]:-}" ]] && new_funcs+="${new_funcs:+ }$f"; done
-                [[ -n "$new_funcs" ]] && __lazy_bind_funcs "$full_path" "$new_funcs"
+                [[ -n "$new_funcs" ]] && __lazy_funcs "$full_path" "$new_funcs"
             else source "$full_path"; fi
         else
             source "$full_path"
             if declare -f "__${target}__" > /dev/null; then "__${target}__"; __init "$target"; fi
-            if (( is_lazy )); then __lazy_bind "$target" "$full_path"; fi
+            if (( is_lazy )); then __lazy "$target" "$full_path"; fi
             __clean "$target"
         fi
     }

@@ -47,19 +47,20 @@ USAGE:
     }
 
     __omni__.run.__compl__() {
-        local cur="${COMP_WORDS[COMP_CWORD]}"
-        local prev="${COMP_WORDS[COMP_CWORD-1]}"
-
-        if [[ "$prev" == "--env" ]]; then
+        local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
+        if [[ "${COMP_CWORD}" == 1 && "$cur" == -* ]]; then
+            COMPREPLY=( $(compgen -W "--env -e --help -h" -- "$cur") )
+            return 0
+        fi
+        if [[ "$prev" == "--env" || "$prev" == "-e" ]]; then
             COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
             return 0
         fi
-        
-        local flags="--env"
+        local flags="--env -e --help -h"
         COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
         compopt -o default
         return 0
-    }  
+    }
 
     __omni__.run.__init__() {
         __compl __omni__.run

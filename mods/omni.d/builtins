@@ -109,33 +109,26 @@ INFO:
     )
 
     __omni__.builtins.__compl__() {
-        local cur="${COMP_WORDS[COMP_CWORD]}"
-        local prev="${COMP_WORDS[COMP_CWORD-1]}"
-        local base_cmd="${COMP_WORDS[1]:-}"
-
+        local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}" base_cmd="${COMP_WORDS[1]:-}"
         if [[ "${COMP_CWORD}" == 1 ]]; then
-            COMPREPLY=( $(compgen -W "ls set use rm reset" -- "$cur") )
+            COMPREPLY=( $(compgen -W "ls set use rm reset --help -h" -- "$cur") )
             return 0
         fi
-
         if [[ "$prev" == "--env" ]]; then
             COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
             return 0
         fi
-
         local flags="${__OMNI_BUILTINS_FLAGS[$base_cmd]}"
-
         if [[ "$base_cmd" == "ls" || "$base_cmd" == "set" || "$base_cmd" == "reset" ]]; then
             COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
             return 0
         fi
-
         if [[ "$base_cmd" == "use" || "$base_cmd" == "rm" ]]; then
             COMPREPLY=( $(compgen -W "$__BUILTINS__ $flags" -- "$cur") )
             return 0
         fi
     }
-
+     
     __omni__.builtins.__init__() {
         for b in $__BUILTINS__; do
             __export "__omni__.builtins.cmd.$b" --as "$b"
