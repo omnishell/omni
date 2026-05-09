@@ -161,6 +161,21 @@ COMMANDS:
         fi
     }
 
+    __omni__.providers() {
+        local cmd="$1"
+        [[ -z "$cmd" || "$cmd" == "--help" || "$cmd" == "-h" ]] && { __omni__.providers.__help__; return 0; }
+        shift
+
+        case "$cmd" in
+            ls)    __omni__.providers.ls "$@" ;;
+            la)    __omni__.providers.la "$@" ;;
+            set)   __omni__.providers.set "$@" ;;
+            check) __omni__.providers.check "$@" ;;
+            rm)    __omni__.providers.rm "$@" ;;
+            *) declare -f __log >/dev/null && __log "Unknown command '$cmd' for __omni__.providers" -t error -l "__omni__.providers" || echo "__omni__.providers: Unknown command '$cmd'" >&2; return 1 ;;
+        esac
+    }
+
     __omni__.providers.__compl__() {
         local cur="${COMP_WORDS[COMP_CWORD]}"
         local prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -179,8 +194,8 @@ COMMANDS:
         local flags=""
         case "$base_cmd" in
             ls|la) flags="--all --env" ;;
-            set) flags="--url --path" ;;
-            rm) flags="--env --global --recursive --force" ;;
+            set)   flags="--url --path" ;;
+            rm)    flags="--env --global --recursive --force" ;;
         esac
 
         if [[ "$base_cmd" == "ls" || "$base_cmd" == "la" || "$base_cmd" == "set" ]]; then
@@ -197,6 +212,4 @@ COMMANDS:
     __omni__.providers.__init__() {
         __compl __omni__.providers
     }
-
-    __build __omni__.providers ls=__omni__.providers.ls la=__omni__.providers.la set=__omni__.providers.set check=__omni__.providers.check rm=__omni__.providers.rm
 }

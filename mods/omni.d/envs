@@ -175,6 +175,22 @@ COMMANDS:
         [[ -f $ENV_PATH/init ]] && source $ENV_PATH/init
     }
 
+    __omni__.envs() {
+        local cmd="$1"
+        [[ -z "$cmd" || "$cmd" == "--help" || "$cmd" == "-h" ]] && { __omni__.envs.__help__; return 0; }
+        shift
+
+        case "$cmd" in
+            init) __omni__.envs.init "$@" ;;
+            ls)   __omni__.envs.ls   "$@" ;;
+            set)  __omni__.envs.set  "$@" ;;
+            rm)   __omni__.envs.rm   "$@" ;;
+            get)  __omni__.envs.get  "$@" ;;
+            use)  __omni__.envs.use  "$@" ;;
+            *) declare -f __log >/dev/null && __log "Unknown command '$cmd' for __omni__.envs" -t error -l "__omni__.envs" || echo "__omni__.envs: Unknown command '$cmd'" >&2; return 1 ;;
+        esac
+    }
+
     __omni__.envs.__compl__() {
         local cur="${COMP_WORDS[COMP_CWORD]}"
         local prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -206,5 +222,4 @@ COMMANDS:
         __compl __omni__.envs
     }
 
-    __build __omni__.envs init=__omni__.envs.init ls=__omni__.envs.ls set=__omni__.envs.set rm=__omni__.envs.rm get=__omni__.envs.get use=__omni__.envs.use
 }

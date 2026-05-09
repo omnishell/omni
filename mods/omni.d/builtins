@@ -68,6 +68,21 @@ INFO:
         __omni__.builtins.__init__
     }
 
+    __omni__.builtins() {
+        local cmd="$1"
+        [[ -z "$cmd" || "$cmd" == "--help" || "$cmd" == "-h" ]] && { __omni__.builtins.__help__; return 0; }
+        shift
+
+        case "$cmd" in
+            ls)    __omni__.builtins.ls "$@" ;;
+            set)   __omni__.builtins.set "$@" ;;
+            use)   __omni__.builtins.use "$@" ;;
+            rm)    __omni__.builtins.rm "$@" ;;
+            reset) __omni__.builtins.reset "$@" ;;
+            *) declare -f __log >/dev/null && __log "Unknown command '$cmd' for __omni__.builtins" -t error -l "__omni__.builtins" || echo "__omni__.builtins: Unknown command '$cmd'" >&2; return 1 ;;
+        esac
+    }
+
     __omni__.builtins.cmd.has() { for i in "$@"; do ! command -v "$i" > /dev/null 2>&1 && return 1; done; return 0; }
     __omni__.builtins.cmd.clip() { if __omni__.builtins.cmd.has xclip; then xclip -selection clipboard; elif __omni__.builtins.cmd.has xsel; then xsel -clipboard; else return 1; fi; }
     __omni__.builtins.cmd.cd() { command pushd -- "$@" > /dev/null 2>&1; }
@@ -124,10 +139,10 @@ INFO:
     __omni__.builtins.__init__() {
         for b in $__BUILTINS__; do
             __export "__omni__.builtins.cmd.$b" --as "$b"
+            unset -f __omni__.builtis.cmd.$b
         done
         alias -- -="back"
         alias -- --="home"
     }
 
-    __build __omni__.builtins ls=__omni__.builtins.ls set=__omni__.builtins.set use=__omni__.builtins.use rm=__omni__.builtins.rm reset=__omni__.builtins.reset
 }

@@ -15,8 +15,6 @@ __init__() {
 
     __declare --dict ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS
 
-    __load omni.builtins --from "$__OMNI_MODS/builtins" --lazy
-
     __load omni --from "$__OMNI_MODS/omni" --lazy && unset -f omni.__compl__
 
     local files

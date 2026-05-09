@@ -48,6 +48,46 @@ INFO:
         fi
     }
 
+    omni() {
+        local cmd="$1"
+        [[ -z "$cmd" || "$cmd" == "--help" || "$cmd" == "-h" ]] && { __omni__.__help__; return 0; }
+        shift
+
+        case "$cmd" in
+            init)
+                __omni__.init "$@"
+                ;;
+            builtins)
+                declare -f __omni__.builtins >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/builtins" && __omni.builtins__; }
+                __omni__.builtins "$@"
+                ;;
+            envs)
+                declare -f __omni__.envs >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/envs" && __omni.envs__; }
+                __omni__.envs "$@"
+                ;;
+            tools)
+                declare -f __omni__.tools >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/tools" && __omni.tools__; }
+                __omni__.tools "$@"
+                ;;
+            providers)
+                declare -f __omni__.providers >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/providers" && __omni.providers__; }
+                __omni__.providers "$@"
+                ;;
+            contexts)
+                declare -f __omni__.contexts >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/contexts" && __omni.contexts__; }
+                __omni__.contexts "$@"
+                ;;
+            run)
+                declare -f __omni__.run >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/run" && __omni.run__; }
+                __omni__.run "$@"
+                ;;
+            *)
+                declare -f __log >/dev/null && __log "Unknown command '$cmd' for omni" -t error -l "omni" || echo "omni: Unknown command '$cmd'" >&2
+                return 1
+                ;;
+        esac
+    }
+
     __omni__.__compl__() {
         local cur="${COMP_WORDS[COMP_CWORD]}"
         if [[ "${COMP_CWORD}" == 1 ]]; then
@@ -90,26 +130,23 @@ INFO:
                 COMP_CWORD=$COMP_CWORD_BACKUP
             fi
         fi
-    } 
-    __omni__.__init__() {
-        local scripts=("$__OMNI_MODS/omni.d/*")
-        for script in ${scripts[@]}; do
-            source $script
-            name=$(basename $script)
-            if declare -f "__omni.${name}__" > /dev/null 2>&1; then eval "__omni.${name}__" /dev/null 2>&1; fi
-            __clean __omni__.$name
-        done
-        complete -o default -o bashdefault -F __omni__.__compl__ omni
     }
 
-    __build omni \
-        init=__omni__.init \
-        builtins=__omni__.builtins   --from "$__OMNI_MODS/omni.d/builtins" \
-        envs=__omni__.envs           --from "$__OMNI_MODS/omni.d/envs" \
-        tools=__omni__.tools         --from "$__OMNI_MODS/omni.d/tools" \
-        providers=__omni__.providers --from "$__OMNI_MODS/omni.d/providers" \
-        contexts=__omni__.contexts   --from "$__OMNI_MODS/omni.d/contexts" \
-        run=__omni__.run             --from "$__OMNI_MODS/omni.d/run"
-
+    __omni__.__init__() {
+        local scripts=("$__OMNI_MODS/omni.d/*")
+        local script name
+        
+        for script in ${scripts[@]}; do
+            source "$script"
+            name="$(basename "$script")"
+            
+            if declare -f "__omni.${name}__" > /dev/null 2>&1; then 
+                "__omni.${name}__" >/dev/null 2>&1
+                unset -f "__omni.${name}__"
+            fi
+        done
+        
+        complete -o default -o bashdefault -F __omni__.__compl__ omni
+    } 
     __omni__.__init__
 }

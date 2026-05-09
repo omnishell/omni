@@ -81,6 +81,18 @@ COMMANDS:
         fi
     }
 
+    __omni__.contexts() {
+        local cmd="$1"
+        [[ -z "$cmd" || "$cmd" == "--help" || "$cmd" == "-h" ]] && { __omni__.contexts.__help__; return 0; }
+        shift
+
+        case "$cmd" in
+            ls)  __omni__.contexts.ls "$@" ;;
+            get) __omni__.contexts.get "$@" ;;
+            *)   declare -f __log >/dev/null && __log "Unknown command '$cmd' for __omni__.contexts" -t error -l "__omni__.contexts" || echo "__omni__.contexts: Unknown command '$cmd'" >&2; return 1 ;;
+        esac
+    }
+
     __omni__.contexts.__compl__() {
         local cur="${COMP_WORDS[COMP_CWORD]}"
         local prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -122,6 +134,4 @@ COMMANDS:
     __omni__.contexts.__init__() {
         __compl __omni__.contexts
     }
-
-    __build __omni__.contexts ls=__omni__.contexts.ls get=__omni__.contexts.get
 }
