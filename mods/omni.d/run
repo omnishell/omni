@@ -1,9 +1,24 @@
 #! /bin/bash
 
-__run() {
-    run() {
+__omni.run__() {
+
+    __omni__.run.__help__() {
+        echo """ABOUT:
+    omni run execution wrapper
+
+USAGE:
+    run [-e|--env <env>] <string> (file or command)""" >&2
+    }
+
+
+    __omni__.run() {
         local target="" t_env=""
         
+        if [[ -z "$1" || "$1" == "--help" || "$1" == "-h" ]]; then
+            __omni__.run.__help__
+            return 0
+        fi
+
         while [[ $# -gt 0 ]]; do
             case "$1" in
                 -e|--env) t_env="$2"; shift ;;
@@ -31,26 +46,22 @@ __run() {
         )
     }
 
-    __run_compl() {
-        local cur prev
-        COMPREPLY=()
-        cur="${COMP_WORDS[COMP_CWORD]}"
-        prev="${COMP_WORDS[COMP_CWORD-1]}"
+    __omni__.run.__compl__() {
+        local cur="${COMP_WORDS[COMP_CWORD]}"
+        local prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-        if [[ "$prev" == "-e" || "$prev" == "--env" ]]; then
+        if [[ "$prev" == "--env" ]]; then
             COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
             return 0
         fi
-
-        if [[ "$cur" == -* ]]; then
-            COMPREPLY=( $(compgen -W "--env -e" -- "$cur") )
-            return 0
-        fi
         
+        local flags="--env"
+        COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
         compopt -o default
-    }
+        return 0
+    }  
 
-    __run_init() {
-        __complete run
+    __omni__.run.__init__() {
+        __compl __omni__.run
     }
 }

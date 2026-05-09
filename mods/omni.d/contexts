@@ -1,0 +1,127 @@
+#! /bin/bash
+
+__omni.contexts__() {
+
+    __omni__.contexts.__help__() {
+        echo """ABOUT:
+    omni contexts registry
+
+USAGE:
+    contexts <command> [args]
+
+COMMANDS:
+    ls      [-e|--env <env>] [-a|--all]
+    get     <context> [<attr>]""" >&2
+    }
+
+    __omni__.contexts.ls() {
+        local t_env="" is_all=0
+        while [[ $# -gt 0 ]]; do
+            case "$1" in 
+                -e|--env) t_env="$2"; shift ;;
+                -a|--all) is_all=1 ;;
+            esac
+            shift
+        done
+        
+        local available=()
+        local contexts_dir="${__OMNI_CONTEXTS:-$__OMNI/contexts}"
+        
+        if [[ -d "$contexts_dir" ]]; then
+            for f in "$contexts_dir"/*; do
+                [[ -f "$f" ]] && available+=("$(basename "$f")")
+            done
+        fi
+        
+        for c in "${!CONTEXTS[@]}"; do
+            if [[ -n "${CONTEXTS[$c]}" || -f "$contexts_dir/$c" ]]; then
+                available+=("$c")
+            fi
+        done
+        
+        if (( is_all )); then
+            printf "%s\n" "${available[@]}" | sort -u | grep -v '^$'
+        else
+            [[ -z "$t_env" ]] && t_env="$ENV"
+            [[ -z "$t_env" ]] && __log "no env was set" -t error -l contexts && return 1
+            
+            local env_tools="${ENV_TOOLS[$t_env]:-}"
+            local filtered=()
+            
+            for c in "${available[@]}"; do
+                if [[ -f "$contexts_dir/$c" ]] || [[ ",${env_tools}," == *",${c},"* ]]; then
+                    filtered+=("$c")
+                fi
+            done
+            printf "%s\n" "${filtered[@]}" | sort -u | grep -v '^$'
+        fi
+    }
+
+    __omni__.contexts.get() {
+        local ctx="$1" attr="$2"
+        [[ -z "$ctx" ]] && __log "context is mandatory" -t error -l contexts && return 1
+        
+        local attrs="$(__attrs "$ctx" | tr ' ' ',')"
+        
+        if [[ -n "$attrs" && "$attrs" != "," ]]; then
+            if [[ -z "$attr" ]]; then
+                echo "$attrs" | tr ',' '\n'
+            else
+                local search=",${attrs},"
+                if [[ "$search" == *",${attr},"* ]]; then
+                    echo "${ctx}.${attr}"
+                else
+                    __log "Attribute '$attr' not found in context '$ctx'." -t error -l contexts
+                    return 1
+                fi
+            fi
+        else
+            __log "Context '$ctx' not found or has no attributes." -t error -l contexts
+            return 1
+        fi
+    }
+
+    __omni__.contexts.__compl__() {
+        local cur="${COMP_WORDS[COMP_CWORD]}"
+        local prev="${COMP_WORDS[COMP_CWORD-1]}"
+        local base_cmd="${COMP_WORDS[1]:-}"
+
+        if [[ "${COMP_CWORD}" == 1 ]]; then 
+            COMPREPLY=( $(compgen -W "ls get" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$prev" == "--env" ]]; then
+            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
+            return 0
+        fi
+
+        local flags=""
+        case "$base_cmd" in
+            ls) flags="--env --all" ;;
+        esac
+
+        if [[ "$base_cmd" == "ls" ]]; then
+            COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$base_cmd" == "get" ]]; then 
+            if [[ "${COMP_CWORD}" == 2 ]]; then
+                local ctxs="$(__omni__.contexts.ls --all 2>/dev/null)"
+                COMPREPLY=( $(compgen -W "$ctxs $flags" -- "$cur") )
+            elif [[ "${COMP_CWORD}" == 3 ]]; then
+                local ctx="$prev"
+                local attrs="$(__attrs "$ctx")"
+                COMPREPLY=( $(compgen -W "$attrs" -- "$cur") )
+            fi
+            return 0
+        fi
+    }
+
+    __omni__.contexts.__init__() {
+        __compl __omni__.contexts
+    }
+
+    __build __omni__.contexts ls=__omni__.contexts.ls get=__omni__.contexts.get
+}

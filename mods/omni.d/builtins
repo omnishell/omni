@@ -1,0 +1,133 @@
+#! /bin/bash
+
+__omni.builtins__() {
+    __BUILTINS__="has clip cd back home ls lf ld la laf lad ln mf md rm mv cp"
+    __declare --dict ENV_BUILTINS
+
+    __omni__.builtins.__help__() {
+        echo """ABOUT:
+    omni builtin utilities manager
+
+USAGE:
+    builtins <command> [args]
+
+COMMANDS:
+    ls      [-e|--env <env>] [-a|--all]
+    set     <builtin> <func> [-e|--env <env> | -g|--global]
+    use     <builtin> [-e|--env <env> | -a|--all]
+    rm      <builtin> [-e|--env <env> | -g|--global] [-f|--force] [-r|--recursive]
+    reset   resets all builtins to defaults
+
+INFO:
+    exposes commands (ls, cd, etc.) directly to the shell.""" >&2
+    }
+
+    __omni__.builtins.ls() {
+        local t_env="${ENV}" is_all=0
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                -a|--all) is_all=1 ;;
+            esac
+            shift
+        done
+        if (( is_all )); then
+            echo "$__BUILTINS__"
+        else
+            local current="${ENV_BUILTINS[$t_env]:-}"
+            [[ -z "$current" ]] && echo "$__BUILTINS__" || echo "${current%,}" | tr ',' '\n'
+        fi
+    }
+
+    __omni__.builtins.set() {
+        local name="$1" func="$2"
+        shift 2
+        local mode="env" t_env="$ENV"
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -g|--global) mode="global" ;;
+                -e|--env) t_env="$2"; shift ;;
+            esac
+            shift
+        done
+
+        if [[ "$mode" == "global" ]]; then
+            [[ " $__BUILTINS__ " != *" $name "* ]] && __BUILTINS__+=" $name"
+            eval "__omni__.builtins.cmd.$name() { $func \"\$@\"; }"
+            __export "__omni__.builtins.cmd.$name" --as "$name"
+        else
+            local current="${ENV_BUILTINS[$t_env]:-}"
+            [[ ",$current," != *",$name,"* ]] && __update "ENV_BUILTINS" "$t_env" "${current}${name}," "set"
+            eval "__omni__.builtins.cmd.$name() { $func \"\$@\"; }"
+            __export "__omni__.builtins.cmd.$name" --as "$name"
+        fi
+    }
+
+    __omni__.builtins.reset() {
+        for e in "${!ENV_BUILTINS[@]}"; do __update "ENV_BUILTINS" "$e" "" "rm"; done
+        __omni__.builtins.__init__
+    }
+
+    __omni__.builtins.cmd.has() { for i in "$@"; do ! command -v "$i" > /dev/null 2>&1 && return 1; done; return 0; }
+    __omni__.builtins.cmd.clip() { if __omni__.builtins.cmd.has xclip; then xclip -selection clipboard; elif __omni__.builtins.cmd.has xsel; then xsel -clipboard; else return 1; fi; }
+    __omni__.builtins.cmd.cd() { command pushd -- "$@" > /dev/null 2>&1; }
+    __omni__.builtins.cmd.back() { command popd > /dev/null 2>&1; }
+    __omni__.builtins.cmd.home() { __omni__.builtins.cmd.cd "$HOME" && __omni__.builtins.cmd.ls; }
+    __omni__.builtins.cmd.ls() { command ls --group-directories-first --color=always "$@"; }
+    __omni__.builtins.cmd.la() { command ls --almost-all --group-directories-first --color=always "$@"; }
+    __omni__.builtins.cmd.lf() { local t="${1:-.}"; (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type f ! -name '.*' -printf '%f\0' | xargs -0r ls --group-directories-first --color=always); }
+    __omni__.builtins.cmd.ld() { local t="${1:-.}"; (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' -printf '%f\0' | xargs -0r ls --group-directories-first --color=always); }
+    __omni__.builtins.cmd.laf() { local t="${1:-.}"; (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type f -printf '%f\0' | xargs -0r ls --group-directories-first --color=always); }
+    __omni__.builtins.cmd.lad() { local t="${1:-.}"; (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type d -printf '%f\0' | xargs -0r ls --group-directories-first --color=always); }
+    __omni__.builtins.cmd.ln() { command ln -sf "$@"; }
+    __omni__.builtins.cmd.md() { command mkdir -p "$@"; }
+    __omni__.builtins.cmd.mf() { for i in "$@"; do local d=$(dirname "$i"); [[ ! -d "$d" ]] && __omni__.builtins.cmd.md "$d"; command touch "$i"; done; }
+    __omni__.builtins.cmd.cp() { if [[ $# -eq 0 ]]; then __omni__.builtins.cmd.clip; elif [[ $# -eq 1 && -f "$1" ]]; then cat "$1" | __omni__.builtins.cmd.clip; else local t="${@: -1}" d; if [[ -d "$t" ]]; then d="$t"; else d=$(dirname "$t"); fi; __omni__.builtins.cmd.md "$d"; command cp -r "$@"; fi; }
+    __omni__.builtins.cmd.rm() { command rm -rf "$@"; }
+    __omni__.builtins.cmd.mv() { local t="${@: -1}" d; if [[ -d "$t" ]]; then d="$t"; else d=$(dirname "$t"); fi; __omni__.builtins.cmd.md "$d"; command mv "$@"; }
+
+    declare -gA __OMNI_BUILTINS_FLAGS=(
+        ["ls"]="--env --all"
+        ["set"]="--env --global"
+        ["use"]="--env --all"
+        ["rm"]="--env --global --force --recursive"
+    )
+
+    __omni__.builtins.__compl__() {
+        local cur="${COMP_WORDS[COMP_CWORD]}"
+        local prev="${COMP_WORDS[COMP_CWORD-1]}"
+        local base_cmd="${COMP_WORDS[1]:-}"
+
+        if [[ "${COMP_CWORD}" == 1 ]]; then
+            COMPREPLY=( $(compgen -W "ls set use rm reset" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$prev" == "--env" ]]; then
+            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
+            return 0
+        fi
+
+        local flags="${__OMNI_BUILTINS_FLAGS[$base_cmd]}"
+
+        if [[ "$base_cmd" == "ls" || "$base_cmd" == "set" || "$base_cmd" == "reset" ]]; then
+            COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$base_cmd" == "use" || "$base_cmd" == "rm" ]]; then
+            COMPREPLY=( $(compgen -W "$__BUILTINS__ $flags" -- "$cur") )
+            return 0
+        fi
+    }
+
+    __omni__.builtins.__init__() {
+        for b in $__BUILTINS__; do
+            __export "__omni__.builtins.cmd.$b" --as "$b"
+        done
+        alias -- -="back"
+        alias -- --="home"
+    }
+
+    __build __omni__.builtins ls=__omni__.builtins.ls set=__omni__.builtins.set use=__omni__.builtins.use rm=__omni__.builtins.rm reset=__omni__.builtins.reset
+}

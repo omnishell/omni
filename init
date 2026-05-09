@@ -1,31 +1,37 @@
 #! /bin/bash
 
 __init__() {
-    export __OMNI_MODS=$__OMNI/mods
-    export __OMNI_CONF=$__OMNI/conf
-    export __OMNI_SCRIPTS=$__OMNI/scripts
-    export __OMNI_TOOLS=$__OMNI/tools
-    export __OMNI_CONTEXTS=$__OMNI/contexts
+    export __OMNI_MODS="$__OMNI/mods"
+    export __OMNI_CONF="$__OMNI/conf"
+    export __OMNI_TOOLS="$__OMNI/tools"
+    export __OMNI_CONTEXTS="$__OMNI/contexts"
 
-    mkdir -p "$__OMNI_SCRIPTS" "$__OMNI_TOOLS" 2>/dev/null || true
+    [[ -d "$__OMNI_TOOLS" ]] || mkdir -p "$__OMNI_TOOLS" 2>/dev/null || true
     export __OMNIRC="${__OMNIRC:-$HOME/.omnirc}"
 
-    source "$__OMNI_MODS/helper" && __helper
-
-    for mod in helper builtins; do
-        __load "$mod" --from "$__OMNI_MODS/$mod"
-    done
-
-    for mod in envs scripts tools providers contexts run omni custom; do 
-        __load "$mod" --from "$__OMNI_MODS/$mod" --lazy
-    done
-
     [[ -f "$__OMNIRC" ]] && source "$__OMNIRC"
-    export SCRIPTS=$(shopt -s nullglob; files=("$__OMNI_SCRIPTS"/*); files=("${files[@]##*/}"); IFS=,; echo "${files[*]}")
 
-    export ENV="${ENV:-$__ENV}"
+    source "$__OMNI_MODS/helper" && __helper__
+
+    __declare --dict ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS
+
+    __load omni.builtins --from "$__OMNI_MODS/builtins" --lazy
+
+    __load omni --from "$__OMNI_MODS/omni" --lazy && unset -f omni.__compl__
+
+    local files
+    shopt -s nullglob
+    files=("$__OMNI_TOOLS"/*)
+    shopt -u nullglob
+    files=("${files[@]##*/}")
+    local OIFS="$IFS"
+    IFS=,
+    export TOOLS_LIST="${files[*]}"
+    IFS="$OIFS"
+
+    export ENV="${__ENV}"
     if [[ -n "$ENV" ]]; then
-        envs use "$ENV"
+        omni envs use "$ENV" --global
     fi
 }
 
