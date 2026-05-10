@@ -1,6 +1,15 @@
 #! /bin/bash
 
 __omni.providers__() {
+    declare -gA PROVIDERS_LOCAL 2>/dev/null || true
+    declare -gA PROVIDERS_REMOTE 2>/dev/null || true
+    declare -gA ENV_PROVIDERS 2>/dev/null || true
+
+    # Force correct system defaults directly into memory on load.
+    # This bypasses any stale or corrupted definitions saved in the OMNIRC cache.
+    PROVIDERS_LOCAL[builtins]="${__OMNI}@@tools@@contexts"
+    PROVIDERS_REMOTE[omni]="https://github.com/omnishell/tools.git@@/@@https://github.com/omnishell/contexts.git@@/"
+
     __omni__.providers.__help__() {
         echo """ABOUT:
     omni providers management
@@ -9,155 +18,154 @@ USAGE:
     omni providers <command> [args]
 
 COMMANDS:
-    ls      [-a|--all] [-e|--env <env>]
-    la      (alias for ls -a)
-    set     <provider> [--url <url>] [--path <path>]
-    check   <provider>
-    rm      <provider> [-e|--env <env>] [-g|--global] [-r|--recursive] [-f|--force]""" >&2
+    ls        [-l|--local] [-r|--remote]
+    la        (alias for ls)
+    set       <name> --type local -d|--dir <dir> -t|--tools <path> -c|--contexts <path>
+              <name> --type remote -T|--tools-repo <url> -t|--tools <path> -C|--contexts-repo <url> -c|--contexts <path>
+    install   <name>
+    uninstall <name>
+    sync      <name>
+    rm        <name>
+    get       <name> | -a|--all""" >&2
     }
 
     __omni__.providers.ls() {
-        if [[ "$1" == "-a" || "$1" == "--all" ]]; then
-            for p in "${!PROVIDERS[@]}"; do echo "$p -> ${PROVIDERS[$p]}"; done
-            return 0
-        fi
-        
-        local t_env="$ENV"
+        local is_local=0 is_remote=0
         while [[ $# -gt 0 ]]; do
-            case "$1" in --env|-e) t_env="$2"; shift ;; esac
-            shift
-        done
-        
-        [[ -z "$t_env" ]] && __log "no env was set" -t error -l providers && return 1
-        echo "${ENV_PROVIDERS[$t_env]}" | tr ',' '\n' | grep -v '^$'
-    }
-
-    __omni__.providers.la() {
-        __omni__.providers.ls -a
-    }
-
-    __omni__.providers.set() {
-        local p_name="$1"
-        shift
-        local p_url="" p_path=""
-        
-        while [[ $# -gt 0 ]]; do
-            case "$1" in 
-                --url=*)  p_url="${1#*=}" ;;
-                --url)    p_url="$2"; shift ;;
-                --path=*) p_path="${1#*=}" ;;
-                --path)   p_path="$2"; shift ;;
+            case "$1" in
+                -l|--local) is_local=1 ;;
+                -r|--remote) is_remote=1 ;;
             esac
             shift
         done
-        
-        [[ -z "$p_name" ]] && __log "<provider> is mandatory" -t error -l providers && return 1
-        [[ -z "$p_url" && -z "$p_path" ]] && __log "Must provide --url and/or --path" -t error -l providers && return 1
-        
-        local val=""
-        [[ -n "$p_url" ]] && val="url:$p_url,"
-        [[ -n "$p_path" ]] && val="${val}path:$p_path,"
-        
-        __update "PROVIDERS" "$p_name" "$val" "set"
-        __log "Provider '$p_name' set successfully." -t success -l providers
+        if (( ! is_local && ! is_remote )); then is_local=1; is_remote=1; fi
+
+        _print_provider() {
+            local p="$1"
+            if (( is_local )) && [[ -n "${PROVIDERS_LOCAL[$p]:-}" ]]; then echo "local: $p"
+            elif (( is_remote )) && [[ -n "${PROVIDERS_REMOTE[$p]:-}" ]]; then echo "remote: $p"
+            fi
+        }
+
+        if (( is_local )); then
+            for p in "${!PROVIDERS_LOCAL[@]}"; do _print_provider "$p"; done
+        fi
+        if (( is_remote )); then
+            for p in "${!PROVIDERS_REMOTE[@]}"; do _print_provider "$p"; done
+        fi
     }
 
-    __omni__.providers.check() {
+    __omni__.providers.la() { __omni__.providers.ls "$@"; }
+
+    __omni__.providers.set() {
+        local p_name="$1"; shift
+        local p_type="" p_dir="" p_tools="" p_contexts="" p_tools_repo="" p_contexts_repo=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --type) p_type="$2"; shift ;;
+                --type=*) p_type="${1#*=}" ;;
+                -d|--dir) p_dir="$2"; shift ;;
+                --dir=*) p_dir="${1#*=}" ;;
+                -t|--tools) p_tools="$2"; shift ;;
+                --tools=*) p_tools="${1#*=}" ;;
+                -c|--contexts) p_contexts="$2"; shift ;;
+                --contexts=*) p_contexts="${1#*=}" ;;
+                -T|--tools-repo) p_tools_repo="$2"; shift ;;
+                --tools-repo=*) p_tools_repo="${1#*=}" ;;
+                -C|--contexts-repo) p_contexts_repo="$2"; shift ;;
+                --contexts-repo=*) p_contexts_repo="${1#*=}" ;;
+            esac
+            shift
+        done
+        [[ -z "$p_name" || -z "$p_type" ]] && return 1
+        if [[ "$p_type" == "local" ]]; then __update "PROVIDERS_LOCAL" "$p_name" "${p_dir}@@${p_tools}@@${p_contexts}" "set"
+        elif [[ "$p_type" == "remote" ]]; then __update "PROVIDERS_REMOTE" "$p_name" "${p_tools_repo}@@${p_tools}@@${p_contexts_repo}@@${p_contexts}" "set"
+        else return 1; fi
+    }
+
+    __omni__.providers.install() {
         local p_name="$1"
-        [[ -z "$p_name" ]] && __log "<provider> is mandatory" -t error -l providers && return 1
-        
-        local p_data="${PROVIDERS[$p_name]}"
-        [[ -z "$p_data" ]] && __log "Provider '$p_name' not found." -t error -l providers && return 1
-        
-        local p_url=$(echo "$p_data" | grep -o 'url:[^,]*' | cut -d: -f2- | tr -d '\n')
-        local p_path=$(echo "$p_data" | grep -o 'path:[^,]*' | cut -d: -f2- | tr -d '\n')
-        
-        if [[ -z "$p_url" ]]; then
-            __log "Checking local path: $p_path" -l providers
-            if [[ -d "$p_path" ]]; then
-                __log "Local directory exists." -t success -l providers
+        [[ -z "$p_name" ]] && return 1
+        local prov_dir="${OMNI:-$HOME/.omni}/providers"
+        mkdir -p "$prov_dir/$p_name" 2>/dev/null || true
+
+        if [[ -n "${PROVIDERS_LOCAL[$p_name]:-}" ]]; then
+            local data="${PROVIDERS_LOCAL[$p_name]}"
+            local p_dir="${data%%@@*}"
+            local rest="${data#*@@}"
+            local p_tools="${rest%%@@*}"
+            local p_contexts="${rest##*@@}"
+            
+            p_tools="${p_tools#/}"
+            p_contexts="${p_contexts#/}"
+
+            ln -sfn "$p_dir/$p_tools" "$prov_dir/$p_name/tools"
+            ln -sfn "$p_dir/$p_contexts" "$prov_dir/$p_name/contexts"
+            
+        elif [[ -n "${PROVIDERS_REMOTE[$p_name]:-}" ]]; then
+            local data="${PROVIDERS_REMOTE[$p_name]}"
+            local t_repo="${data%%@@*}"
+            local rest="${data#*@@}"
+            local t_path="${rest%%@@*}"
+            rest="${rest#*@@}"
+            local c_repo="${rest%%@@*}"
+            local c_path="${rest##*@@}"
+
+            t_path="${t_path#/}"
+            c_path="${c_path#/}"
+
+            local tmp_dir="$(mktemp -d)"
+            git clone --depth 1 "$t_repo" "$tmp_dir/t" >/dev/null 2>&1
+            cp -r "$tmp_dir/t/$t_path" "$prov_dir/$p_name/tools"
+
+            if [[ "$t_repo" == "$c_repo" ]]; then
+                cp -r "$tmp_dir/t/$c_path" "$prov_dir/$p_name/contexts"
             else
-                __log "Local directory not found." -t error -l providers; return 1
+                git clone --depth 1 "$c_repo" "$tmp_dir/c" >/dev/null 2>&1
+                cp -r "$tmp_dir/c/$c_path" "$prov_dir/$p_name/contexts"
             fi
+            rm -rf "$tmp_dir"
         else
-            __log "Checking remote provider: $p_url" -l providers
-            if curl -Isf "$p_url" > /dev/null || git ls-remote "$p_url" > /dev/null 2>&1; then
-                __log "Provider is reachable." -t success -l providers
-            else
-                __log "Provider is unreachable." -t error -l providers; return 1
-            fi
+            return 1
         fi
+    }
+
+    __omni__.providers.uninstall() {
+        local p_name="$1"
+        [[ -z "$p_name" ]] && return 1
+        local prov_dir="${OMNI:-$HOME/.omni}/providers"
+        rm -rf "$prov_dir/$p_name"
+    }
+
+    __omni__.providers.sync() {
+        local p_name="$1"
+        [[ -z "$p_name" ]] && return 1
+        __omni__.providers.uninstall "$p_name"
+        __omni__.providers.install "$p_name"
     }
 
     __omni__.providers.rm() {
-        local p_name="$1"
-        shift
+        local p_name="$1"; shift
+        [[ -z "$p_name" ]] && return 1
         
-        local t_env="$ENV"
-        local is_global=0 is_recursive=0 is_force=0
-        
-        while [[ $# -gt 0 ]]; do
-            case "$1" in
-                -e|--env)  t_env="$2"; shift ;;
-                -g|--global) is_global=1 ;;
-                -r|--recursive) is_recursive=1 ;;
-                -f|--force) is_force=1 ;;
-            esac
-            shift
-        done
-        
-        [[ -z "$p_name" ]] && __log "<provider> is mandatory" -t error -l providers && return 1
-        [[ -z "${PROVIDERS[$p_name]}" ]] && __log "Provider '$p_name' does not exist." -t error -l providers && return 1
+        [[ -n "${PROVIDERS_LOCAL[$p_name]:-}" ]] && __update "PROVIDERS_LOCAL" "$p_name" "" "rm"
+        [[ -n "${PROVIDERS_REMOTE[$p_name]:-}" ]] && __update "PROVIDERS_REMOTE" "$p_name" "" "rm"
+    }
 
-        if (( is_global )); then
-            local active_in_envs="" used_in_tools=""
-            for e in "${!ENVS[@]}"; do
-                if [[ ",${ENV_PROVIDERS[$e]}," == *",${p_name},"* ]]; then active_in_envs="$active_in_envs $e"; fi
-                for t in ${ENV_TOOLS[$e]//,/ }; do
-                    local t_info="${TOOLS[$t]}"
-                    if [[ "$t_info" == *"provider:$p_name"* ]]; then used_in_tools="$used_in_tools $t($e)"; fi
-                done
-            done
-
-            if [[ -n "$active_in_envs" ]] && (( ! is_recursive )); then
-                __log "Provider '$p_name' is active in envs: $active_in_envs\nPass -r/--recursive to remove it from all environments." -t error -l providers
-                return 1
+    __omni__.providers.get() {
+        local target="$1" is_all=0
+        [[ "$target" == "-a" || "$target" == "--all" ]] && is_all=1
+        _print_get() {
+            local p="$1"
+            if [[ -n "${PROVIDERS_LOCAL[$p]:-}" ]]; then echo "[$p] type: local | config: ${PROVIDERS_LOCAL[$p]//@@/ | }"
+            elif [[ -n "${PROVIDERS_REMOTE[$p]:-}" ]]; then echo "[$p] type: remote | config: ${PROVIDERS_REMOTE[$p]//@@/ | }"
             fi
-
-            if [[ -n "$used_in_tools" ]] && (( ! is_force )); then
-                __log "Provider '$p_name' is used by active tools: $used_in_tools\nPass -f/--force to override and remove anyway." -t error -l providers
-                return 1
-            fi
-
-            if (( is_recursive )); then
-                for e in $active_in_envs; do
-                    local new_val=$(echo ",${ENV_PROVIDERS[$e]}" | sed "s/,${p_name},/,/g" | sed "s/^,//")
-                    __update "ENV_PROVIDERS" "$e" "$new_val" "set"
-                done
-            fi
-            
-            __update "PROVIDERS" "$p_name" "" "rm"
-            __log "Provider '$p_name' globally removed." -t success -l providers
+        }
+        if (( is_all )); then
+            for p in "${!PROVIDERS_LOCAL[@]}"; do _print_get "$p"; done
+            for p in "${!PROVIDERS_REMOTE[@]}"; do _print_get "$p"; done
         else
-            [[ -z "$t_env" ]] && __log "no env was set" -t error -l providers && return 1
-            
-            if (( ! is_force )); then
-                local used_in_tools=""
-                for t in ${ENV_TOOLS[$t_env]//,/ }; do
-                    local t_info="${TOOLS[$t]}"
-                    if [[ "$t_info" == *"provider:$p_name"* ]]; then used_in_tools="$used_in_tools $t"; fi
-                done
-                
-                if [[ -n "$used_in_tools" ]]; then
-                    __log "Provider '$p_name' is used by tools in env '$t_env': $used_in_tools\nPass -f/--force to remove anyway." -t error -l providers
-                    return 1
-                fi
-            fi
-            
-            local current="${ENV_PROVIDERS[$t_env]}"
-            local new_val=$(echo ",${current}" | sed "s/,${p_name},/,/g" | sed "s/^,//")
-            __update "ENV_PROVIDERS" "$t_env" "$new_val" "set"
-            __log "Provider '$p_name' removed from env '$t_env'." -t success -l providers
+            [[ -n "$target" ]] && _print_get "$target"
         fi
     }
 
@@ -165,43 +173,49 @@ COMMANDS:
         local cmd="$1"
         [[ -z "$cmd" || "$cmd" == "--help" || "$cmd" == "-h" ]] && { __omni__.providers.__help__; return 0; }
         shift
-
         case "$cmd" in
-            ls)    __omni__.providers.ls "$@" ;;
-            la)    __omni__.providers.la "$@" ;;
-            set)   __omni__.providers.set "$@" ;;
-            check) __omni__.providers.check "$@" ;;
-            rm)    __omni__.providers.rm "$@" ;;
-            *) declare -f __log >/dev/null && __log "Unknown command '$cmd' for __omni__.providers" -t error -l "__omni__.providers" || echo "__omni__.providers: Unknown command '$cmd'" >&2; return 1 ;;
+            ls)        __omni__.providers.ls "$@" ;;
+            la)        __omni__.providers.la "$@" ;;
+            set)       __omni__.providers.set "$@" ;;
+            install)   __omni__.providers.install "$@" ;;
+            uninstall) __omni__.providers.uninstall "$@" ;;
+            sync)      __omni__.providers.sync "$@" ;;
+            rm)        __omni__.providers.rm "$@" ;;
+            get)       __omni__.providers.get "$@" ;;
+            *)         return 1 ;;
         esac
     }
 
     __omni__.providers.__compl__() {
         local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}" base_cmd="${COMP_WORDS[1]:-}"
         if [[ "${COMP_CWORD}" == 1 ]]; then 
-            COMPREPLY=( $(compgen -W "ls set check rm la --help -h" -- "$cur") )
+            COMPREPLY=( $(compgen -W "ls set install uninstall sync rm get la --help -h" -- "$cur") )
             return 0
         fi
-        if [[ "$prev" == "--env" ]]; then
-            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
-            return 0
-        fi
-        local flags=""
+        _all_providers() { echo "${!PROVIDERS_LOCAL[*]} ${!PROVIDERS_REMOTE[*]}"; }
+        
         case "$base_cmd" in
-            ls|la) flags="--all --env" ;;
-            set)   flags="--url --path" ;;
-            rm)    flags="--env --global --recursive --force" ;;
+            ls|la)
+                if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-l --local -r --remote" -- "$cur") ); fi ;;
+            set)
+                if [[ "$prev" == "--type" ]]; then COMPREPLY=( $(compgen -W "local remote" -- "$cur") ); return 0; fi
+                if [[ "$cur" == -* ]]; then
+                    local p_type=""
+                    for ((i=1; i<COMP_CWORD; i++)); do
+                        if [[ "${COMP_WORDS[i]}" == "--type" ]]; then p_type="${COMP_WORDS[i+1]:-}"; break
+                        elif [[ "${COMP_WORDS[i]}" == "--type="* ]]; then p_type="${COMP_WORDS[i]#*=}"; break; fi
+                    done
+                    if [[ "$p_type" == "local" ]]; then COMPREPLY=( $(compgen -W "--type -d --dir -t --tools -c --contexts" -- "$cur") )
+                    elif [[ "$p_type" == "remote" ]]; then COMPREPLY=( $(compgen -W "--type -T --tools-repo -C --contexts-repo -t --tools -c --contexts" -- "$cur") )
+                    else COMPREPLY=( $(compgen -W "--type" -- "$cur") ); fi
+                fi ;;
+            install|uninstall|sync|rm)
+                if [[ "${COMP_CWORD}" == 2 ]]; then COMPREPLY=( $(compgen -W "$(_all_providers)" -- "$cur") ); fi ;;
+            get)
+                if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-a --all" -- "$cur") )
+                elif [[ "${COMP_CWORD}" == 2 ]]; then COMPREPLY=( $(compgen -W "$(_all_providers)" -- "$cur") ); fi ;;
         esac
-        if [[ "$base_cmd" == "ls" || "$base_cmd" == "la" || "$base_cmd" == "set" ]]; then
-            COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
-            return 0
-        fi
-        if [[ "$base_cmd" == "check" || "$base_cmd" == "rm" ]]; then 
-            COMPREPLY=( $(compgen -W "${!PROVIDERS[*]} $flags" -- "$cur") )
-            return 0
-        fi
     } 
-    __omni__.providers.__init__() {
-        __compl __omni__.providers
-    }
+
+    __omni__.providers.__init__() { __compl __omni__.providers; }
 }

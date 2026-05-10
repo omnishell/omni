@@ -1,82 +1,177 @@
 #! /bin/bash
 
 __omni.contexts__() {
+    declare -gA ENV_CONTEXTS 2>/dev/null || true
 
     __omni__.contexts.__help__() {
         echo """ABOUT:
-    omni contexts registry
+    omni contexts manager
 
 USAGE:
-    contexts <command> [args]
+    omni contexts <command> [args]
 
 COMMANDS:
-    ls      [-e|--env <env>] [-a|--all]
-    get     <context> [<attr>]""" >&2
+    ls      [-e|--env <env>] [-p|--provider <provider>] [-a|--all]
+    use     <context> [-e|--env <env>] [-p|--provider <provider>]
+    rm      <context> [-e|--env <env>] [-p|--provider <provider>]
+    get     <context> [<attr>] [-p|--provider <provider>]""" >&2
     }
 
     __omni__.contexts.ls() {
-        local t_env="" is_all=0
+        local t_env="" t_prov="builtins" is_all=0
+        local prov_dir="${OMNI:-$HOME/.omni}/providers"
+
         while [[ $# -gt 0 ]]; do
-            case "$1" in 
+            case "$1" in
                 -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                -p|--provider) t_prov="$2"; shift ;;
+                --provider=*) t_prov="${1#*=}" ;;
                 -a|--all) is_all=1 ;;
             esac
             shift
         done
-        
-        local available=()
-        local contexts_dir="${__OMNI_CONTEXTS:-$__OMNI/contexts}"
-        
-        if [[ -d "$contexts_dir" ]]; then
-            for f in "$contexts_dir"/*; do
-                [[ -f "$f" ]] && available+=("$(basename "$f")")
-            done
-        fi
-        
-        for c in "${!CONTEXTS[@]}"; do
-            if [[ -n "${CONTEXTS[$c]}" || -f "$contexts_dir/$c" ]]; then
-                available+=("$c")
-            fi
-        done
-        
-        if (( is_all )); then
-            printf "%s\n" "${available[@]}" | sort -u | grep -v '^$'
-        else
-            [[ -z "$t_env" ]] && t_env="$ENV"
-            [[ -z "$t_env" ]] && __log "no env was set" -t error -l contexts && return 1
+
+        if [[ -n "$t_env" ]]; then
+            local current="${ENV_CONTEXTS[$t_env]:-}"
+            local OIFS="$IFS"
+            IFS=','
+            local entries=($current)
+            IFS="$OIFS"
             
-            local env_tools="${ENV_TOOLS[$t_env]:-}"
-            local filtered=()
-            
-            for c in "${available[@]}"; do
-                if [[ -f "$contexts_dir/$c" ]] || [[ ",${env_tools}," == *",${c},"* ]]; then
-                    filtered+=("$c")
+            for entry in "${entries[@]}"; do
+                if [[ -n "$entry" ]]; then
+                    if (( is_all )); then 
+                        echo "$entry"
+                    elif [[ "$entry" == "${t_prov}@@"* ]]; then 
+                        echo "${entry#*@@}"
+                    elif [[ "$entry" != *"@@"* && "$t_prov" == "builtins" ]]; then 
+                        echo "$entry"
+                    fi
                 fi
             done
-            printf "%s\n" "${filtered[@]}" | sort -u | grep -v '^$'
+        elif (( is_all )); then
+            for p in "$prov_dir"/*; do
+                if [[ -d "$p/contexts" ]]; then
+                    local p_name="${p##*/}"
+                    for f in "$p/contexts"/*; do
+                        [[ -f "$f" ]] && echo "$p_name: ${f##*/}"
+                    done
+                fi
+            done
+        else
+            if [[ -d "$prov_dir/$t_prov/contexts" ]]; then
+                for f in "$prov_dir/$t_prov/contexts"/*; do
+                    [[ -f "$f" ]] && echo "${f##*/}"
+                done
+            fi
+        fi
+    }
+
+    __omni__.contexts.use() {
+        local c_name="" t_env="$ENV" t_prov="builtins"
+        local prov_dir="${OMNI:-$HOME/.omni}/providers"
+
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                -p|--provider) t_prov="$2"; shift ;;
+                --provider=*) t_prov="${1#*=}" ;;
+                *) [[ -z "$c_name" ]] && c_name="$1" ;;
+            esac
+            shift
+        done
+        [[ -z "$c_name" ]] && { echo "error: <context> is mandatory" >&2; return 1; }
+        [[ -z "$t_env" ]] && { echo "error: no env was set" >&2; return 1; }
+        [[ ! -f "$prov_dir/$t_prov/contexts/$c_name" ]] && { echo "error: context '$c_name' not found in provider '$t_prov'" >&2; return 1; }
+
+        local current="${ENV_CONTEXTS[$t_env]:-}"
+        local target="${t_prov}@@${c_name}"
+        if [[ ",${current}," != *",${target},"* && !( "$t_prov" == "builtins" && ",${current}," == *",${c_name},"* ) ]]; then
+            local new_val="${current%,}"
+            [[ -n "$new_val" ]] && new_val="${new_val},"
+            new_val="${new_val}${target},"
+            __update "ENV_CONTEXTS" "$t_env" "$new_val" "set"
+        fi
+
+        if [[ "$t_env" == "${ENV:-}" ]]; then
+            __load context "$c_name" --from "$prov_dir/$t_prov/contexts" -l
+        fi
+    }
+
+    __omni__.contexts.rm() {
+        local c_name="" t_env="$ENV" t_prov="builtins"
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                -p|--provider) t_prov="$2"; shift ;;
+                --provider=*) t_prov="${1#*=}" ;;
+                *) [[ -z "$c_name" ]] && c_name="$1" ;;
+            esac
+            shift
+        done
+        [[ -z "$c_name" ]] && { echo "error: <context> is mandatory" >&2; return 1; }
+        [[ -z "$t_env" ]] && { echo "error: no env was set" >&2; return 1; }
+
+        local current="${ENV_CONTEXTS[$t_env]:-}"
+        local target="${t_prov}@@${c_name}"
+        if [[ ",${current}," == *",${target},"* || ( "$t_prov" == "builtins" && ",${current}," == *",${c_name},"* ) ]]; then
+            local new_val=","
+            local OIFS="$IFS"
+            IFS=','
+            local entries=($current)
+            IFS="$OIFS"
+            for entry in "${entries[@]}"; do
+                if [[ -n "$entry" && "$entry" != "$target" && !( "$t_prov" == "builtins" && "$entry" == "$c_name" ) ]]; then
+                    new_val+="${entry},"
+                fi
+            done
+            new_val="${new_val#,}"
+            __update "ENV_CONTEXTS" "$t_env" "$new_val" "set"
+        fi
+
+        if [[ "$t_env" == "${ENV:-}" ]]; then
+            __prune "$c_name" 2>/dev/null || true
+            unset -f "$c_name" "${c_name}.__compl__" "${c_name}.__help__" "${c_name}.__init__" "${c_name}.__aliases__" 2>/dev/null || true
         fi
     }
 
     __omni__.contexts.get() {
-        local ctx="$1" attr="$2"
-        [[ -z "$ctx" ]] && __log "context is mandatory" -t error -l contexts && return 1
+        local c_name="" attr="" t_prov="builtins"
+        local prov_dir="${OMNI:-$HOME/.omni}/providers"
         
-        local attrs="$(__attrs "$ctx" | tr ' ' ',')"
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -p|--provider) t_prov="$2"; shift ;;
+                --provider=*) t_prov="${1#*=}" ;;
+                *)
+                    if [[ -z "$c_name" ]]; then c_name="$1"
+                    elif [[ -z "$attr" ]]; then attr="$1"
+                    fi
+                    ;;
+            esac
+            shift
+        done
         
-        if [[ -n "$attrs" && "$attrs" != "," ]]; then
+        [[ -z "$c_name" ]] && { echo "error: <context> is mandatory" >&2; return 1; }
+        local full_path="$prov_dir/$t_prov/contexts/$c_name"
+        [[ ! -f "$full_path" ]] && { echo "error: context '$c_name' not found in provider '$t_prov'" >&2; return 1; }
+
+        local funcs=$( ( source "$full_path" 2>/dev/null; compgen -A function "${c_name}." ) | sed -E "s/^${c_name}\.//" | grep -vE '^__[a-zA-Z0-9_]+__$' | sort -u | tr '\n' ',' | sed 's/,$//' )
+        
+        if [[ -n "$funcs" ]]; then
             if [[ -z "$attr" ]]; then
-                echo "$attrs" | tr ',' '\n'
+                echo "$funcs" | tr ',' '\n'
             else
-                local search=",${attrs},"
-                if [[ "$search" == *",${attr},"* ]]; then
-                    echo "${ctx}.${attr}"
+                if [[ ",${funcs}," == *",${attr},"* ]]; then
+                    echo "${c_name}.${attr}"
                 else
-                    __log "Attribute '$attr' not found in context '$ctx'." -t error -l contexts
                     return 1
                 fi
             fi
         else
-            __log "Context '$ctx' not found or has no attributes." -t error -l contexts
             return 1
         fi
     }
@@ -85,46 +180,108 @@ COMMANDS:
         local cmd="$1"
         [[ -z "$cmd" || "$cmd" == "--help" || "$cmd" == "-h" ]] && { __omni__.contexts.__help__; return 0; }
         shift
-
         case "$cmd" in
             ls)  __omni__.contexts.ls "$@" ;;
+            use) __omni__.contexts.use "$@" ;;
+            rm)  __omni__.contexts.rm "$@" ;;
             get) __omni__.contexts.get "$@" ;;
-            *)   declare -f __log >/dev/null && __log "Unknown command '$cmd' for __omni__.contexts" -t error -l "__omni__.contexts" || echo "__omni__.contexts: Unknown command '$cmd'" >&2; return 1 ;;
+            *)   echo "omni contexts: Unknown command '$cmd'" >&2; return 1 ;;
         esac
     }
 
     __omni__.contexts.__compl__() {
         local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}" base_cmd="${COMP_WORDS[1]:-}"
         if [[ "${COMP_CWORD}" == 1 ]]; then 
-            COMPREPLY=( $(compgen -W "ls get --help -h" -- "$cur") )
+            COMPREPLY=( $(compgen -W "ls use rm get --help -h" -- "$cur") )
             return 0
         fi
-        if [[ "$prev" == "--env" ]]; then
+
+        if [[ "$prev" == "-e" || "$prev" == "--env" ]]; then
             COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
             return 0
         fi
-        local flags=""
-        case "$base_cmd" in
-            ls) flags="--env --all" ;;
-        esac
-        if [[ "$base_cmd" == "ls" ]]; then
-            COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
-            return 0
-        fi
-        if [[ "$base_cmd" == "get" ]]; then 
-            if [[ "${COMP_CWORD}" == 2 ]]; then
-                local ctxs="$(__omni__.contexts.ls --all 2>/dev/null)"
-                COMPREPLY=( $(compgen -W "$ctxs $flags" -- "$cur") )
-            elif [[ "${COMP_CWORD}" == 3 ]]; then
-                local ctx="$prev"
-                local attrs="$(__attrs "$ctx")"
-                COMPREPLY=( $(compgen -W "$attrs" -- "$cur") )
-            fi
-            return 0
-        fi
-    }
 
-    __omni__.contexts.__init__() {
-        __compl __omni__.contexts
-    }
+        if [[ "$prev" == "-p" || "$prev" == "--provider" ]]; then
+            COMPREPLY=( $(compgen -W "${!PROVIDERS_LOCAL[*]} ${!PROVIDERS_REMOTE[*]}" -- "$cur") )
+            return 0
+        fi
+
+        local t_prov="builtins"
+        for ((i=1; i<COMP_CWORD; i++)); do
+            if [[ "${COMP_WORDS[i]}" == "-p" || "${COMP_WORDS[i]}" == "--provider" ]]; then
+                t_prov="${COMP_WORDS[i+1]:-}"
+                break
+            elif [[ "${COMP_WORDS[i]}" == "--provider="* ]]; then
+                t_prov="${COMP_WORDS[i]#*=}"
+                break
+            fi
+        done
+
+        _list_contexts_in_dir() {
+            local p="$1"
+            local prov_dir="${OMNI:-$HOME/.omni}/providers"
+            if [[ -d "$prov_dir/$p/contexts" ]]; then
+                for f in "$prov_dir/$p/contexts"/*; do [[ -f "$f" ]] && echo "${f##*/}"; done
+            fi
+        }
+
+        _list_active_contexts() {
+            local e="${ENV:-}" p="$1"
+            local current="${ENV_CONTEXTS[$e]:-}"
+            local OIFS="$IFS"
+            IFS=','
+            local entries=($current)
+            IFS="$OIFS"
+            for entry in "${entries[@]}"; do
+                if [[ -n "$entry" ]]; then
+                    if [[ "$entry" == "${p}@@"* ]]; then echo "${entry#*@@}"
+                    elif [[ "$entry" != *"@@"* && "$p" == "builtins" ]]; then echo "$entry"
+                    fi
+                fi
+            done
+        }
+
+        _is_flag_value() {
+            [[ "$prev" == "-e" || "$prev" == "--env" || "$prev" == "-p" || "$prev" == "--provider" ]]
+        }
+
+        case "$base_cmd" in
+            ls)
+                if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-e --env -p --provider -a --all" -- "$cur") ); fi ;;
+            use)
+                if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-e --env -p --provider" -- "$cur") )
+                elif ! _is_flag_value; then COMPREPLY=( $(compgen -W "$(_list_contexts_in_dir "$t_prov")" -- "$cur") ); fi ;;
+            rm)
+                if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-e --env -p --provider" -- "$cur") )
+                elif ! _is_flag_value; then COMPREPLY=( $(compgen -W "$(_list_active_contexts "$t_prov")" -- "$cur") ); fi ;;
+            get)
+                if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-p --provider" -- "$cur") )
+                elif ! _is_flag_value; then 
+                    local target_cword=$COMP_CWORD
+                    for ((i=2; i<COMP_CWORD; i++)); do
+                        if [[ "${COMP_WORDS[i]}" == -* || "${COMP_WORDS[i-1]}" == -* ]]; then ((target_cword--)); fi
+                    done
+                    
+                    if [[ "$target_cword" == 2 ]]; then 
+                        COMPREPLY=( $(compgen -W "$(_list_contexts_in_dir "$t_prov")" -- "$cur") )
+                    elif [[ "$target_cword" == 3 ]]; then
+                        local ctx=""
+                        for ((i=2; i<COMP_CWORD; i++)); do
+                            if [[ "${COMP_WORDS[i]}" != -* && "${COMP_WORDS[i-1]}" != -* ]]; then
+                                ctx="${COMP_WORDS[i]}"
+                                break
+                            fi
+                        done
+                        local prov_dir="${OMNI:-$HOME/.omni}/providers"
+                        local full_path="$prov_dir/$t_prov/contexts/$ctx"
+                        if [[ -f "$full_path" ]]; then
+                            local attrs=$( ( source "$full_path" 2>/dev/null; compgen -A function "${ctx}." ) | sed -E "s/^${ctx}\.//" | grep -vE '^__[a-zA-Z0-9_]+__$' | sort -u )
+                            COMPREPLY=( $(compgen -W "$attrs" -- "$cur") )
+                        fi
+                    fi
+                fi ;;
+        esac
+    } 
+
+    __omni__.contexts.__init__() { __compl __omni__.contexts; }
 }

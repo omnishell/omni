@@ -17,7 +17,7 @@ COMMANDS:
     }
 
     __global() {
-        local val="$1" rcfile="${__OMNIRC:-$HOME/.omnirc}"
+        local val="$1" rcfile="${OMNIRC:-${OMNI:-$HOME/.omni}/omnirc}"
         local content="" found=0
 
         if [[ -f "$rcfile" ]]; then
@@ -50,24 +50,22 @@ COMMANDS:
             env_path="$ENV_PATH"
         fi
         
-        [[ -z "$env_path" ]] && __log "<env> is mandatory or no active environment" -t error -l envs && return 1
+        [[ -z "$env_path" ]] && return 1
         
         if [[ -f "$env_path/init" ]]; then
             source "$env_path/init"
-            __log "Sourced $env_path/init" -t success -l envs
         else
-            __log "$env_path/init not found" -t error -l envs
             return 1
         fi
     }
 
     __omni__.envs.ls() { 
-        for env in ${ENVS[@]}; do echo $env; done
+        for env in "${ENVS[@]}"; do echo "$env"; done
     }
 
     __omni__.envs.set() {
-        _target_name="$1"; shift
-        env_path="" bin="" tmp="" sec="" mnt=""
+        local _target_name="$1"; shift
+        local env_path="" bin="" tmp="" sec="" mnt=""
         while [[ $# -gt 0 ]]; do
             case "$1" in
                 -p=*|--path=*) env_path="${1#*=}" ;;
@@ -83,19 +81,20 @@ COMMANDS:
             esac
             shift
         done
-        [[ -z "$_target_name" ]] && __log "<env> mandatory" -t error -l envs && return 1
-        [[ -z "$env_path" ]] && __log "--path mandatory" -t error -l envs && return 1
-        echo "ENVS+=($_target_name)" > $__OMNIRC
+        [[ -z "$_target_name" || -z "$env_path" ]] && return 1
+        local rcfile="${OMNIRC:-${OMNI:-$HOME/.omni}/omnirc}"
+        if ! grep -q "ENVS+=($_target_name)" "$rcfile" 2>/dev/null; then
+            echo "ENVS+=($_target_name)" >> "$rcfile"
+        fi
 
         __update "ENV_VARS" "$_target_name" "path:$env_path,bin:$bin,tmp:$tmp,sec:$sec,mnt:$mnt" "set"
-        __log "Environment '$_target_name' registered." -t success -l envs
     }
 
     __omni__.envs.get() {
-        _target_name="${1:-$ENV}"
-        [[ -z "$_target_name" ]] && __log "<env> mandatory" -t error -l envs && return 1
-        [[ -z "${ENVS[$_target_name]}" ]] && __log "env '$_target_name' not registered" -t error -l envs && return 1
-        str=",${ENV_VARS[$_target_name]},"
+        local _target_name="${1:-$ENV}"
+        [[ -z "$_target_name" ]] && return 1
+        [[ -z "${ENVS[$_target_name]:-}" && "${ENVS[*]}" != *"$_target_name"* ]] && return 1
+        local str=",${ENV_VARS[$_target_name]:-},"
         
         local e_path="${str#*,path:}"
         echo "ENV_PATH=${e_path%%,*}"
@@ -110,10 +109,14 @@ COMMANDS:
     }
 
     __omni__.envs.rm() {
-        _target_name="$1"
-        [[ -z "$_target_name" ]] && __log "<env> mandatory" -t error -l envs && return 1
-        if ! __is env "$_target_name"; then __log "'$_target_name' invalid" -t error -l envs; return 1; fi
-        [[ "$__ENV" == "$_target_name" ]] && __global ""
+        local _target_name="$1"
+        [[ -z "$_target_name" ]] && return 1
+        if ! __is env "$_target_name"; then return 1; fi
+        [[ "${__ENV:-}" == "$_target_name" ]] && __global ""
+        
+        local rcfile="${OMNIRC:-${OMNI:-$HOME/.omni}/omnirc}"
+        sed -i "/ENVS+=($_target_name)/d" "$rcfile" 2>/dev/null || true
+        
         __update "ENVS" "$_target_name" "" "rm"
         __update "ENV_VARS" "$_target_name" "" "rm"
         __update "ENV_LAZY" "$_target_name" "" "rm"
@@ -121,15 +124,15 @@ COMMANDS:
         __update "ENV_OPEN" "$_target_name" "" "rm"
         __update "ENV_PROVIDERS" "$_target_name" "" "rm"
         __update "ENV_TOOLS" "$_target_name" "" "rm"
-        __log "Environment '$_target_name' removed." -t success -l envs
+        __update "ENV_CONTEXTS" "$_target_name" "" "rm"
     }
 
     __omni__.envs.use() {
-        _target_name="$1"
+        local _target_name="$1"
         if [[ -z "$_target_name" ]]; then _target_name="$ENV"; fi
-        if [[ -z "$_target_name" ]]; then __log "<env> mandatory" -t error -l envs; return 1; fi
+        [[ -z "$_target_name" ]] && return 1
         shift
-        set_global=false b_list=""
+        local set_global=false b_list=""
         while [[ $# -gt 0 ]]; do
             case "$1" in
                 -g|--global) set_global=true ;;
@@ -138,9 +141,9 @@ COMMANDS:
             esac
             shift
         done
-        if ! __is env "$_target_name"; then __log "could not load env '$_target_name': not registered." -t error -l envs; return 1; fi
+        if ! __is env "$_target_name"; then return 1; fi
         export ENV="$_target_name"
-        str=",${ENV_VARS[$_target_name]},"
+        local str=",${ENV_VARS[$_target_name]:-},"
 
         export ENV_PATH="${str#*,path:}" && export ENV_PATH="${ENV_PATH%%,*}"
         export BIN="${str#*,bin:}" && export BIN="${BIN%%,*}"
@@ -148,9 +151,10 @@ COMMANDS:
         export SEC="${str#*,sec:}" && export SEC="${SEC%%,*}"
         export MNT="${str#*,mnt:}" && export MNT="${MNT%%,*}"
         [[ -n "$BIN" ]] && export PATH="$PATH:$BIN"
+        
         if $set_global; then __global "$_target_name"; export __ENV="$_target_name" __ENV_PATH="$ENV_PATH"; fi
         
-        source "$__OMNI_MODS/omni.d/builtins"
+        source "${OMNI:-$HOME/.omni}/mods/omni.d/builtins" 2>/dev/null || true
         if declare -f __omni.builtins__ >/dev/null 2>&1; then __omni.builtins__; fi
         
         if [[ -z "$b_list" ]]; then 
@@ -161,10 +165,43 @@ COMMANDS:
             done
         fi
         
-        active_tools=$(__list tools --env "$_target_name" 2>/dev/null)
-        if [[ -n "$active_tools" ]]; then 
-            for t_name in ${active_tools//,/ }; do 
-                __load tool "$t_name" --from "$__OMNI_TOOLS/$t_name" --lazy
+        local active_tools="${ENV_TOOLS[$_target_name]:-}"
+        if [[ -n "$active_tools" ]]; then
+            local prov_dir="${OMNI:-$HOME/.omni}/providers"
+            local OIFS="$IFS"
+            IFS=','
+            local entries=($active_tools)
+            IFS="$OIFS"
+            for entry in "${entries[@]}"; do
+                if [[ -n "$entry" ]]; then
+                    local p_name="builtins"
+                    local t_name="$entry"
+                    if [[ "$entry" == *"@@"* ]]; then
+                        p_name="${entry%%@@*}"
+                        t_name="${entry#*@@}"
+                    fi
+                    __load tool "$t_name" --from "$prov_dir/$p_name/tools" --lazy
+                fi
+            done
+        fi
+
+        local active_contexts="${ENV_CONTEXTS[$_target_name]:-}"
+        if [[ -n "$active_contexts" ]]; then
+            local prov_dir="${OMNI:-$HOME/.omni}/providers"
+            local OIFS="$IFS"
+            IFS=','
+            local entries=($active_contexts)
+            IFS="$OIFS"
+            for entry in "${entries[@]}"; do
+                if [[ -n "$entry" ]]; then
+                    local p_name="builtins"
+                    local c_name="$entry"
+                    if [[ "$entry" == *"@@"* ]]; then
+                        p_name="${entry%%@@*}"
+                        c_name="${entry#*@@}"
+                    fi
+                    __load context "$c_name" --from "$prov_dir/$p_name/contexts" --lazy
+                fi
             done
         fi
         
@@ -172,7 +209,7 @@ COMMANDS:
             if declare -f __omni__.builtins >/dev/null 2>&1; then __init __omni__.builtins; fi
         fi
 
-        [[ -f $ENV_PATH/init ]] && source $ENV_PATH/init
+        [[ -f "$ENV_PATH/init" ]] && source "$ENV_PATH/init"
     }
 
     __omni__.envs() {
@@ -187,7 +224,7 @@ COMMANDS:
             rm)   __omni__.envs.rm   "$@" ;;
             get)  __omni__.envs.get  "$@" ;;
             use)  __omni__.envs.use  "$@" ;;
-            *) declare -f __log >/dev/null && __log "Unknown command '$cmd' for __omni__.envs" -t error -l "__omni__.envs" || echo "__omni__.envs: Unknown command '$cmd'" >&2; return 1 ;;
+            *)    return 1 ;;
         esac
     }
 
@@ -215,5 +252,4 @@ COMMANDS:
     __omni__.envs.__init__() {
         __compl __omni__.envs
     }
-
 }
