@@ -81,7 +81,15 @@ COMMANDS:
             esac
             shift
         done
-        [[ -z "$_target_name" || -z "$env_path" ]] && return 1
+        [[ -z "$_target_name" ]] && return 1
+
+        local base_env="${OMNI:-$HOME/.omni}/envs/$_target_name"
+        [[ -z "$env_path" ]] && env_path="$base_env"
+        [[ -z "$bin" ]]      && bin="$base_env/bin"
+        [[ -z "$tmp" ]]      && tmp="$base_env/tmp"
+        [[ -z "$sec" ]]      && sec="$base_env/sec"
+        [[ -z "$mnt" ]]      && mnt="$base_env/mnt"
+
         local rcfile="${OMNIRC:-${OMNI:-$HOME/.omni}/omnirc}"
         if ! grep -q "ENVS+=($_target_name)" "$rcfile" 2>/dev/null; then
             echo "ENVS+=($_target_name)" >> "$rcfile"

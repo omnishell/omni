@@ -7,9 +7,10 @@ __init__() {
     export __OMNI_CONTEXTS="$__OMNI/contexts"
 
     [[ -d "$__OMNI_TOOLS" ]] || mkdir -p "$__OMNI_TOOLS" 2>/dev/null || true
-    export __OMNIRC="${__OMNIRC:-$HOME/.omnirc}"
+    export OMNI="${OMNI:-$HOME/.omni}"
+    export OMNIRC="${OMNIRC:-$OMNI/omnirc}"
 
-    [[ -f "$__OMNIRC" ]] && source "$__OMNIRC"
+    mkdir -p $OMNI && touch $OMNIRC && source "$OMNIRC"
 
     source "$__OMNI_MODS/helper" && __helper__
 

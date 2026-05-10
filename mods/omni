@@ -26,14 +26,14 @@ INFO:
     __omni__.init() {
         while [[ $# -gt 0 ]]; do
             case "$1" in
-                -c|--conf) export __OMNIRC="$2"; shift ;;
-                --conf=*)  export __OMNIRC="${1#*=}" ;;
+                -c|--conf) export OMNIRC="$2"; shift ;;
+                --conf=*)  export OMNIRC="${1#*=}" ;;
             esac
             shift
         done
 
-        local rcfile="${__OMNIRC:-$HOME/.omnirc}"
-        export __OMNIRC="$rcfile"
+        local rcfile="${OMNIRC:-$HOME/.omnirc}"
+        export OMNIRC="$rcfile"
 
         if [[ ! -f "$rcfile" ]]; then
             touch "$rcfile" 2>/dev/null

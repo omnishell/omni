@@ -90,7 +90,7 @@ __helper__() {
 
     __update() {
         local array_name="$1" key="$2" value="$3" mode="$4"
-        local rcfile="${__OMNIRC:-$HOME/.omnirc}"
+        local rcfile="${OMNIRC:-$HOME/.omnirc}"
         touch "$rcfile"
         if [[ "$mode" == "rm" ]]; then
             sed -i "/^${array_name}\[\"$key\"\]=/d" "$rcfile"
