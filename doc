@@ -1,0 +1,49 @@
+#!/bin/bash
+
+doc() {
+    local doc_dir="$PWD/docs" topic="" arg f target
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -d|--docs) doc_dir="$2"; shift 2 ;;
+            -d=*|--docs=*) doc_dir="${1#*=}"; shift ;;
+            -*) shift ;;
+            *) [[ -z "$topic" ]] && topic="$1"; shift ;;
+        esac
+    done
+    [[ ! -d "$doc_dir" ]] && return 1
+    __omni_format__() {
+        local line E=$'\e' w=100
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            while [[ "$line" =~ (.*)__([^_]+)__(.*) ]]; do
+                line="${BASH_REMATCH[1]}${E}[1m${BASH_REMATCH[2]}${E}[0m${BASH_REMATCH[3]}"
+            done
+            while [[ "$line" =~ (.*)_([^_]+)_(.*) ]]; do
+                line="${BASH_REMATCH[1]}${E}[3m${BASH_REMATCH[2]}${E}[0m${BASH_REMATCH[3]}"
+            done
+            while [[ "$line" =~ (.*)::(black|red|green|yellow|blue|magenta|cyan|white):([^:]+)::(.*) ]]; do
+                local c; case "${BASH_REMATCH[2]}" in black)c=30;;red)c=31;;green)c=32;;yellow)c=33;;blue)c=34;;magenta)c=35;;cyan)c=36;;white)c=37;;esac
+                line="${BASH_REMATCH[1]}${E}[${c}m${BASH_REMATCH[3]}${E}[0m${BASH_REMATCH[4]}"
+            done
+            while ((${#line} > w)); do
+                printf "%s\n" "${line:0:w}"
+                line="${line:w}"
+            done
+            printf "%s\n" "$line"
+        done
+    }
+    export -f __omni_format__
+    local -a files=()
+    shopt -s nullglob
+    if [[ -n "$topic" ]]; then
+        for f in "$doc_dir"/*.txt; do
+            [[ "$f" == *"-$topic.txt" || "$f" == "$doc_dir/$topic.txt" ]] && { files=("$f"); break; }
+        done
+    else
+        files=("$doc_dir"/*.txt)
+    fi
+    shopt -u nullglob
+    [[ ${#files[@]} -eq 0 ]] && return 1
+    LESSOPEN="| bash -c '__omni_format__ < %s'" ${PAGER:-less} -R "${files[@]}"
+}
+
+doc "$@"

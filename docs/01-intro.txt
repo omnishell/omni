@@ -1,0 +1,14 @@
+_OMNI_ SHELL __FRAMEWORK__
+====================
+
+Omni is a speed-optimized, modular environment manager for Bash. It uses lazy-loading to keep shell initialization nearly instantaneous while providing advanced workspace isolation.
+
+CORE ARCHITECTURE:
+- Environments: Isolated workspaces with specific BIN, TMP, and SEC paths.
+- Providers: Sources (local/remote) for tools and contexts.
+- Tools: Functional modules loaded on-demand into the current shell.
+- Contexts: Reusable state and logic modules.
+
+PAGER ::blue:NAVIGATION:::
+- Type ':n' to go to the next file (e.g., Namespaces).
+- Type ':p' to go to the previous file.

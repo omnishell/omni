@@ -5,10 +5,8 @@ __omni.providers__() {
     declare -gA PROVIDERS_REMOTE 2>/dev/null || true
     declare -gA ENV_PROVIDERS 2>/dev/null || true
 
-    # Force correct system defaults directly into memory on load.
-    # This bypasses any stale or corrupted definitions saved in the OMNIRC cache.
     PROVIDERS_LOCAL[builtins]="${__OMNI}@@tools@@contexts"
-    PROVIDERS_REMOTE[omni]="https://github.com/omnishell/tools.git@@/@@https://github.com/omnishell/contexts.git@@/"
+    PROVIDERS_REMOTE[omni]="https://github.com/omnishell/tools.git@@/tools@@https://github.com/omnishell/contexts.git@@/contexts"
 
     __omni__.providers.__help__() {
         echo """ABOUT:

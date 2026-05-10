@@ -1,0 +1,15 @@
+PROVIDERS
+=========
+
+Providers are repositories containing tools and contexts.
+
+TYPES:
+* Local: Directories on your machine (e.g., your 'omni' install dir).
+* Remote: Git repositories (e.g., GitHub).
+
+COMMANDS:
+* ls: List active providers.
+* set: Register a new local or remote provider.
+* install/sync: Download or update tools from a provider.
+
+Providers use the '@@' delimiter to map internal repository paths to local omni structures.

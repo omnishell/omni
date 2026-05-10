@@ -1,0 +1,12 @@
+CORE CONCEPT: NAMESPACES
+========================
+
+Omni enforces strict namespacing to prevent global shell pollution. All framework functions follow the pattern:
+  __<context>__.<method>
+
+STANDARDS:
+1. Module Initialization: Every module must define an __init__ function.
+2. Function Prefixing: Internal methods use the module name as a prefix (e.g., omni.builtins.cmd.ls).
+3. Scoping: Variables intended for specific scopes are declared using the 'private' tool to ensure they are cleaned up after execution.
+
+This structure allows multiple modules to exist without colliding and enables the 'clean', 'prune', and 'kill' helpers to manage shell memory effectively.

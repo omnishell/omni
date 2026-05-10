@@ -11,6 +11,7 @@ USAGE:
     omni <command> [args]
 
 COMMANDS:
+    doc
     init
     builtins
     envs
@@ -54,6 +55,9 @@ INFO:
         shift
 
         case "$cmd" in
+            doc)
+                bash $__OMNI/doc --docs $__OMNI/docs
+                ;;
             init)
                 __omni__.init "$@"
                 ;;

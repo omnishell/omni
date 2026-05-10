@@ -1,0 +1,13 @@
+TOOLS
+=====
+
+Tools are dynamic scripts or functions stored in a provider's /tools directory.
+
+LIFECYCLE:
+1. Register: A tool is associated with an environment.
+2. Lazy-Load: The tool is not sourced until called by the user.
+3. Aliasing: Tools can export aliases directly to the shell.
+
+MANAGEMENT:
+* omni tools ls: Show available tools in current provider.
+* omni tools use <tool>: Enable a tool for the current environment.

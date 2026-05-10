@@ -1,0 +1,13 @@
+CONTEXTS
+========
+
+Contexts provide shared logic, types, and helper functions.
+
+IMPORT SYSTEM:
+The 'import' tool allows modules to fetch attributes from contexts dynamically:
+  import <attr> from <context> [in <provider>]
+
+Example:
+  import list from types
+
+Contexts often contain metadata tags like @opt and @flag to automatically generate shell completions via the 'compl' engine.
