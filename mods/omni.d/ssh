@@ -1,0 +1,348 @@
+#! /bin/bash
+
+__omni.ssh__() {
+    declare -gA ENV_SSH_NS 2>/dev/null || true
+    declare -gA ENV_SSH_DEF 2>/dev/null || true
+
+    __omni__.ssh.__help__() {
+        >&2 printf "ABOUT:\n    omni SSH manager\n\nUSAGE:\n    omni ssh <command> [args]\n\nCOMMANDS:\n    set  <namespace> -e <env> -p <path> [-d]\n    use  <namespace> -e <env>\n    ls   [-e <env> | -a]\n    rm   <namespace> -e <env>\n    keys <command>\n\nKEYS COMMANDS:\n    new/set <key> [-e <env>] [-n <ns>] [-t <type>] [-m <msg>]\n    ls      [-e <env>] [-n <ns>] [-a]\n    get     <key> [-e <env>] [-n <ns>]\n    rm      <key> [-e <env>] [-n <ns>]\n    use     <key> [-e <env>] [-n <ns>]\n"
+    }
+
+    __omni__.ssh.set() {
+        local ns="" t_env="$ENV" path="" is_def=0
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                -p|--path) path="$2"; shift ;;
+                --path=*) path="${1#*=}" ;;
+                -d|--default) is_def=1 ;;
+                *) [[ -z "$ns" ]] && ns="$1" ;;
+            esac
+            shift
+        done
+        [[ -z "$ns" || -z "$path" || -z "$t_env" ]] && return 1
+
+        local current="${ENV_SSH_NS[$t_env]:-}"
+        local new_val=","
+        local IFS=','
+        for entry in $current; do
+            [[ -n "$entry" && "${entry%%:*}" != "$ns" ]] && new_val="${new_val}${entry},"
+        done
+        new_val="${new_val#,}${ns}:${path},"
+
+        __update "ENV_SSH_NS" "$t_env" "$new_val" "set"
+        (( is_def )) && __update "ENV_SSH_DEF" "$t_env" "$ns" "set"
+        mkdir -p "$path" 2>/dev/null || true
+        return 0
+    }
+
+    __omni__.ssh.use() {
+        local ns="" t_env="$ENV"
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                *) [[ -z "$ns" ]] && ns="$1" ;;
+            esac
+            shift
+        done
+        [[ -z "$ns" || -z "$t_env" ]] && return 1
+        __update "ENV_SSH_DEF" "$t_env" "$ns" "set"
+    }
+
+    __omni__.ssh.ls() {
+        local t_env="$ENV" is_all=0
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                -a|--all) is_all=1 ;;
+            esac
+            shift
+        done
+
+        if (( is_all )); then
+            for e in "${!ENV_SSH_NS[@]}"; do
+                local IFS=','
+                for entry in ${ENV_SSH_NS[$e]}; do
+                    [[ -n "$entry" ]] && echo "[$e] ${entry%%:*}: ${entry#*:}"
+                done
+            done
+        else
+            [[ -z "$t_env" ]] && return 1
+            local IFS=','
+            for entry in ${ENV_SSH_NS[$t_env]:-}; do
+                [[ -n "$entry" ]] && echo "${entry%%:*}: ${entry#*:}"
+            done
+        fi
+    }
+
+    __omni__.ssh.rm() {
+        local ns="" t_env="$ENV"
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                *) [[ -z "$ns" ]] && ns="$1" ;;
+            esac
+            shift
+        done
+        [[ -z "$ns" || -z "$t_env" ]] && return 1
+
+        local current="${ENV_SSH_NS[$t_env]:-}"
+        local new_val=","
+        local IFS=','
+        for entry in $current; do
+            [[ -n "$entry" && "${entry%%:*}" != "$ns" ]] && new_val="${new_val}${entry},"
+        done
+        __update "ENV_SSH_NS" "$t_env" "${new_val#,}" "set"
+        
+        [[ "${ENV_SSH_DEF[$t_env]:-}" == "$ns" ]] && __update "ENV_SSH_DEF" "$t_env" "" "rm"
+        return 0
+    }
+
+    __omni__.ssh._get_path() {
+        local e="$1" n="$2" path=""
+        local IFS=','
+        for entry in ${ENV_SSH_NS[$e]:-}; do
+            if [[ "${entry%%:*}" == "$n" ]]; then
+                path="${entry#*:}"
+                break
+            fi
+        done
+        echo "$path"
+    }
+
+    __omni__.ssh.keys.new() {
+        local key="" t_env="$ENV" ns="" type="ed25519" msg=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                -n|--namespace) ns="$2"; shift ;;
+                --namespace=*) ns="${1#*=}" ;;
+                -t|--type) type="$2"; shift ;;
+                --type=*) type="${1#*=}" ;;
+                -m|--message) msg="$2"; shift ;;
+                --message=*) msg="${1#*=}" ;;
+                *) [[ -z "$key" ]] && key="$1" ;;
+            esac
+            shift
+        done
+        [[ -z "$ns" ]] && ns="${ENV_SSH_DEF[$t_env]:-}"
+        [[ -z "$ns" || -z "$key" ]] && return 1
+
+        local path="$(__omni__.ssh._get_path "$t_env" "$ns")"
+        [[ -z "$path" ]] && return 1
+
+        command ssh-keygen -t "$type" -C "${msg:-$key}" -f "$path/$key"
+    }
+
+    __omni__.ssh.keys.ls() {
+        local t_env="$ENV" ns="" is_all=0
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                -n|--namespace) ns="$2"; shift ;;
+                --namespace=*) ns="${1#*=}" ;;
+                -a|--all) is_all=1 ;;
+            esac
+            shift
+        done
+
+        _ls_ns_keys() {
+            local p="$1" prefix="$2"
+            shopt -s nullglob
+            for f in "$p"/*; do
+                [[ -f "$f" && "$f" != *.pub ]] && echo "$prefix${f##*/}"
+            done
+            shopt -u nullglob
+        }
+
+        if (( is_all )); then
+            if [[ -n "$t_env" ]]; then
+                local IFS=','
+                for entry in ${ENV_SSH_NS[$t_env]:-}; do
+                    [[ -n "$entry" ]] && _ls_ns_keys "${entry#*:}" "${entry%%:*}: "
+                done
+            else
+                for e in "${!ENV_SSH_NS[@]}"; do
+                    local IFS=','
+                    for entry in ${ENV_SSH_NS[$e]:-}; do
+                        [[ -n "$entry" ]] && _ls_ns_keys "${entry#*:}" "[$e] ${entry%%:*}: "
+                    done
+                done
+            fi
+        else
+            [[ -z "$ns" ]] && ns="${ENV_SSH_DEF[$t_env]:-}"
+            local path="$(__omni__.ssh._get_path "$t_env" "$ns")"
+            [[ -n "$path" ]] && _ls_ns_keys "$path" ""
+        fi
+    }
+
+    __omni__.ssh.keys.get() {
+        local key="" t_env="$ENV" ns=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                -n|--namespace) ns="$2"; shift ;;
+                --namespace=*) ns="${1#*=}" ;;
+                *) [[ -z "$key" ]] && key="$1" ;;
+            esac
+            shift
+        done
+        [[ -z "$ns" ]] && ns="${ENV_SSH_DEF[$t_env]:-}"
+        local path="$(__omni__.ssh._get_path "$t_env" "$ns")"
+        
+        if [[ -f "$path/$key.pub" ]]; then
+            command cat "$path/$key.pub"
+        elif [[ -f "$path/$key" ]]; then
+            command cat "$path/$key"
+        else
+            return 1
+        fi
+    }
+
+    __omni__.ssh.keys.rm() {
+        local key="" t_env="$ENV" ns=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                -n|--namespace) ns="$2"; shift ;;
+                --namespace=*) ns="${1#*=}" ;;
+                *) [[ -z "$key" ]] && key="$1" ;;
+            esac
+            shift
+        done
+        [[ -z "$ns" ]] && ns="${ENV_SSH_DEF[$t_env]:-}"
+        local path="$(__omni__.ssh._get_path "$t_env" "$ns")"
+        
+        [[ -n "$path" && -n "$key" ]] && command rm -f "$path/$key" "$path/$key.pub"
+    }
+
+    __omni__.ssh.keys.use() {
+        local key="" t_env="$ENV" ns=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                -n|--namespace) ns="$2"; shift ;;
+                --namespace=*) ns="${1#*=}" ;;
+                *) [[ -z "$key" ]] && key="$1" ;;
+            esac
+            shift
+        done
+        [[ -z "$ns" ]] && ns="${ENV_SSH_DEF[$t_env]:-}"
+        local path="$(__omni__.ssh._get_path "$t_env" "$ns")"
+        
+        if [[ -n "$path" && -n "$key" && -f "$path/$key" ]]; then
+            eval "$(command ssh-agent -s)" >/dev/null 2>&1
+            command ssh-add "$path/$key"
+        else
+            return 1
+        fi
+    }
+
+    __omni__.ssh.keys() {
+        local cmd="$1"; shift
+        case "$cmd" in
+            new|set) __omni__.ssh.keys.new "$@" ;;
+            ls)      __omni__.ssh.keys.ls "$@" ;;
+            get)     __omni__.ssh.keys.get "$@" ;;
+            rm)      __omni__.ssh.keys.rm "$@" ;;
+            use)     __omni__.ssh.keys.use "$@" ;;
+            *)       return 1 ;;
+        esac
+    }
+
+    __omni__.ssh() {
+        local cmd="$1"
+        [[ -z "$cmd" || "$cmd" == "--help" || "$cmd" == "-h" ]] && { __omni__.ssh.__help__; return 0; }
+        shift
+        case "$cmd" in
+            set)  __omni__.ssh.set "$@" ;;
+            use)  __omni__.ssh.use "$@" ;;
+            ls)   __omni__.ssh.ls "$@" ;;
+            rm)   __omni__.ssh.rm "$@" ;;
+            keys) __omni__.ssh.keys "$@" ;;
+            *)    return 1 ;;
+        esac
+    }
+
+    __omni__.ssh.__compl__() {
+        local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}" base_cmd="${COMP_WORDS[1]:-}" sub_cmd="${COMP_WORDS[2]:-}"
+        
+        if [[ "${COMP_CWORD}" == 1 ]]; then 
+            COMPREPLY=( $(compgen -W "set use ls rm keys --help -h" -- "$cur") )
+            return 0
+        fi
+
+        _get_ns() {
+            local IFS=','
+            for entry in ${ENV_SSH_NS[$ENV]:-}; do [[ -n "$entry" ]] && echo "${entry%%:*}"; done
+        }
+        
+        _get_keys() {
+            local ns="${ENV_SSH_DEF[$ENV]:-}"
+            for ((i=1; i<COMP_CWORD; i++)); do
+                if [[ "${COMP_WORDS[i]}" == "-n" || "${COMP_WORDS[i]}" == "--namespace" ]]; then
+                    ns="${COMP_WORDS[i+1]:-}"
+                    break
+                elif [[ "${COMP_WORDS[i]}" == "--namespace="* ]]; then
+                    ns="${COMP_WORDS[i]#*=}"
+                    break
+                fi
+            done
+            local path="$(__omni__.ssh._get_path "$ENV" "$ns")"
+            [[ -n "$path" ]] && for f in "$path"/*; do [[ -f "$f" && "$f" != *.pub ]] && echo "${f##*/}"; done
+        }
+
+        if [[ "$base_cmd" == "keys" ]]; then
+            if [[ "${COMP_CWORD}" == 2 ]]; then
+                COMPREPLY=( $(compgen -W "new set ls get rm use" -- "$cur") )
+                return 0
+            fi
+            if [[ "$prev" == "-e" || "$prev" == "--env" ]]; then
+                COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
+                return 0
+            fi
+            if [[ "$prev" == "-n" || "$prev" == "--namespace" ]]; then
+                COMPREPLY=( $(compgen -W "$(_get_ns)" -- "$cur") )
+                return 0
+            fi
+            if [[ "$prev" == "-t" || "$prev" == "--type" ]]; then
+                COMPREPLY=( $(compgen -W "rsa dsa ecdsa ed25519 ecdsa-sk ed25519-sk" -- "$cur") )
+                return 0
+            fi
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "-e --env -n --namespace -t --type -m --message -a --all" -- "$cur") )
+                return 0
+            fi
+            if [[ "$sub_cmd" == "get" || "$sub_cmd" == "rm" || "$sub_cmd" == "use" ]]; then
+                COMPREPLY=( $(compgen -W "$(_get_keys)" -- "$cur") )
+            fi
+            return 0
+        fi
+
+        if [[ "$prev" == "-e" || "$prev" == "--env" ]]; then
+            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
+            return 0
+        fi
+
+        case "$base_cmd" in
+            set)
+                if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-e --env -p --path -d --default" -- "$cur") )
+                else COMPREPLY=( $(compgen -W "$(_get_ns)" -- "$cur") ); fi ;;
+            use|rm)
+                if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-e --env" -- "$cur") )
+                else COMPREPLY=( $(compgen -W "$(_get_ns)" -- "$cur") ); fi ;;
+            ls)
+                if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-e --env -a --all" -- "$cur") ); fi ;;
+        esac
+    } 
+    __omni__.ssh.__init__() { __compl __omni__.ssh; }
+}
