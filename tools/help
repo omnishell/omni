@@ -1,0 +1,79 @@
+#! /bin/bash
+
+__help__() {
+    __help__.__help__() {
+        echo """ABOUT:
+    omni help viewer
+
+USAGE:
+    help <target> [<method>]
+
+FLAGS:
+  -h, --help    Show this help""" >&2
+    }
+
+    help() {
+        if [[ "$1" == "--help" || "$1" == "-h" ]]; then __help__.__help__; return 0; fi
+        local target="$1"
+        local method="$2"
+
+        if [[ -z "$target" ]]; then
+            command help
+            return 0
+        fi
+
+        if [[ -n "$method" ]]; then
+            target="${target}.${method}"
+        fi
+
+        if declare -f "__${target}__.__help__" >/dev/null; then
+            "__${target}__.__help__"
+        elif declare -f "${target}.__help__" >/dev/null; then
+            "${target}.__help__"
+        else
+            command help "$target" 2>/dev/null || echo "No omni help available for '$target'" >&2
+            return $?
+        fi
+    }
+
+    __help__.__compl__() {
+        local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
+        if [[ "${COMP_CWORD}" == 1 ]]; then
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--help -h" -- "$cur") )
+                return 0
+            fi
+            local funcs="$(compgen -A function)" helps=""
+            for f in $funcs; do
+                if [[ "$f" == __*__.__help__ ]]; then
+                    local name="${f%.__help__}"
+                    name="${name#__}"
+                    name="${name%__}"
+                    if [[ "$name" != *.* ]]; then helps+="$name "; fi
+                elif [[ "$f" == *.__help__ && "$f" != __* ]]; then
+                    local name="${f%.__help__}"
+                    if [[ "$name" != *.* ]]; then helps+="$name "; fi
+                fi
+            done
+            COMPREPLY=( $(compgen -W "$helps" -- "$cur") )
+            return 0
+        elif [[ "${COMP_CWORD}" == 2 ]]; then
+            local funcs="$(compgen -A function)" helps=""
+            for f in $funcs; do
+                if [[ "$f" == "__${prev}__."*.__help__ ]]; then
+                    local name="${f%.__help__}" method="${name#__${prev}__.}"
+                    helps+="$method "
+                elif [[ "$f" == "${prev}."*.__help__ && "$f" != __* ]]; then
+                    local name="${f%.__help__}" method="${name#${prev}.}"
+                    helps+="$method "
+                fi
+            done
+            COMPREPLY=( $(compgen -W "$helps" -- "$cur") )
+            return 0
+        fi
+    }
+
+    __help__.__init__() {
+        __compl help
+    }
+}

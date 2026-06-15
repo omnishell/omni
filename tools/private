@@ -1,0 +1,70 @@
+#! /bin/bash
+
+__private__() {
+
+    __private__.__help__() {
+        echo """ABOUT:
+    omni private variables declarator
+
+USAGE:
+    private [flags] <name>
+
+FLAGS:
+    -a, --array   Declare array
+    -d, --dict    Declare associative array
+    -i, --int     Declare integer
+    -f, --func    Declare function
+    -s, --string  Declare string (default)
+    -h, --help    Show this help""" >&2
+    }
+
+    private() {
+        if [[ "$1" == "--help" || "$1" == "-h" ]]; then __private__.__help__; return 0; fi
+        local type_flag="" name="" is_func=0 unset_flag="-v"        
+        case "$1" in
+            -a|--array)  type_flag="-a"; shift ;;
+            -d|--dict)   type_flag="-A"; shift ;;
+            -i|--int)    type_flag="-i"; shift ;;
+            -f|--func)   is_func=1; unset_flag="-f"; shift ;;
+            -s|--string) shift ;; 
+            -*)          __log "Unknown private flag $1" -t error -l private; return 1 ;;
+        esac
+        
+        name="${1:-}"
+        [[ -z "$name" ]] && __log "private requires a name." -t error -l private && return 1
+
+        local caller_func="${FUNCNAME[1]:-}"
+
+        if (( ! is_func )); then
+            if [[ -n "$type_flag" ]]; then
+                declare -g $type_flag "$name"
+            else
+                declare -g "$name"
+            fi
+        fi
+
+        if [[ -n "$caller_func" && "$caller_func" != "source" && "$caller_func" != "main" ]]; then
+            local current_trap="$(trap -p RETURN)"
+            if [[ -n "$current_trap" ]]; then
+                current_trap="${current_trap#*\'}" 
+                current_trap="${current_trap%\'*}" 
+            fi
+            trap "${current_trap:+$current_trap; }[[ \"\${FUNCNAME[0]:-}\" == \"$caller_func\" ]] && unset $unset_flag $name 2>/dev/null || true" RETURN
+        else
+            __MODULE_CLEANUPS+=("unset $unset_flag $name 2>/dev/null || true")
+        fi
+    }
+
+    __private__.__compl__() {
+        local cur="${COMP_WORDS[COMP_CWORD]}"
+        COMPREPLY=()
+        if [[ "${COMP_CWORD}" == 1 || "$cur" == -* ]]; then
+            COMPREPLY=( $(compgen -W "-a --array -d --dict -i --int -f --func -s --string --help -h" -- "$cur") )
+            return 0
+        fi
+    }
+
+    __private__.__init__() {
+        __compl private
+    }
+}

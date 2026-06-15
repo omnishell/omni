@@ -1,0 +1,75 @@
+#! /bin/bash
+
+__dot__() {
+
+    __dot__.__help__() {
+        echo """ABOUT:
+    omni filesystem navigation tool
+
+USAGE:
+    dot <symbol> [flags]
+
+SYMBOLS:
+  - / ...  Go back and ls
+  ..       Go up and ls
+  .        Go home and ls
+  ,        ls -A
+
+FLAGS:
+  -h, --help    Show this help""" >&2
+    }
+
+    dot() {
+        if [[ "$1" == "--help" || "$1" == "-h" ]]; then __dot__.__help__; return 0; fi
+        case "$1" in
+            "")
+                ls ;;
+            "-"|"...")
+                shift && back && ls ;;
+            "..")
+                shift && cd .. && ls ;;
+            ".")
+                shift && home ;;
+            ",")
+                shift && la "$@" ;;
+            *)
+                if [[ -d "$1" ]]; then
+                    cd "$1"
+                    shift
+                    ls "$@"
+                elif [[ -f "$1" ]]; then
+                    open -- "$1"
+                else
+                    ls "$@"
+                fi
+                ;;
+        esac
+    }
+
+    __dot__.__aliases__() {
+        alias .='dot'
+        alias ..="dot .."
+        alias .,='dot ,'
+        alias .f='lf'
+        alias .d='ld'
+    }
+
+    __dot__.__compl__() {
+        local cur="${COMP_WORDS[COMP_CWORD]}"
+        COMPREPLY=()
+        if [[ "${COMP_CWORD}" == 1 && "$cur" == .* || "$cur" == , || "$cur" == - ]]; then
+            COMPREPLY=( $(compgen -W "- ... .. . ," -- "$cur") )
+            return 0
+        fi
+        if [[ "${COMP_CWORD}" == 1 && "$cur" == -* ]]; then
+            COMPREPLY=( $(compgen -W "--help -h" -- "$cur") )
+            return 0
+        fi
+    }
+
+    __dot__.__init__() {
+        __aliases  dot
+        __compl    dot
+        __clean    dot
+    }
+}

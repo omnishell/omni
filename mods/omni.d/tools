@@ -1,0 +1,284 @@
+#! /bin/bash
+
+__omni.tools__() {
+    declare -gA ENV_TOOLS 2>/dev/null || true
+
+    __omni__.tools.__help__() {
+        echo """ABOUT:
+    omni tools manager
+
+USAGE:
+    omni tools <command> [args]
+
+COMMANDS:
+    ls      [-e|--env <env>] [-p|--provider <provider>] [-a|--all]
+    use     <tool> [-e|--env <env>] [-p|--provider <provider>]
+    rm      <tool> [-e|--env <env>] [-p|--provider <provider>]""" >&2
+    }
+
+    __omni__.tools.ls() {
+        local t_env="" t_prov="builtins" is_all=0
+        local prov_dir="${OMNI:-$HOME/.omni}/providers"
+
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                -p|--provider) t_prov="$2"; shift ;;
+                --provider=*) t_prov="${1#*=}" ;;
+                -a|--all) is_all=1 ;;
+            esac
+            shift
+        done
+
+        if [[ -n "$t_env" ]]; then
+            local current="${ENV_TOOLS[$t_env]:-}"
+            local OIFS="$IFS"
+            IFS=','
+            local entries=($current)
+            IFS="$OIFS"
+            
+            for entry in "${entries[@]}"; do
+                if [[ -n "$entry" ]]; then
+                    if (( is_all )); then 
+                        echo "$entry"
+                    elif [[ "$entry" == "${t_prov}@@"* ]]; then 
+                        echo "${entry#*@@}"
+                    elif [[ "$entry" != *"@@"* && "$t_prov" == "builtins" ]]; then 
+                        echo "$entry"
+                    fi
+                fi
+            done
+        elif (( is_all )); then
+            for p in "$prov_dir"/*; do
+                if [[ -d "$p/tools" ]]; then
+                    local p_name="${p##*/}"
+                    for f in "$p/tools"/*; do
+                        [[ -f "$f" ]] && echo "$p_name: ${f##*/}"
+                    done
+                fi
+            done
+        else
+            if [[ -d "$prov_dir/$t_prov/tools" ]]; then
+                for f in "$prov_dir/$t_prov/tools"/*; do
+                    [[ -f "$f" ]] && echo "${f##*/}"
+                done
+            fi
+        fi
+    }
+
+    __omni__.tools.use() {
+        local t_name="" t_env="$ENV" t_prov="builtins"
+        local prov_dir="${OMNI:-$HOME/.omni}/providers"
+
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                -p|--provider) t_prov="$2"; shift ;;
+                --provider=*) t_prov="${1#*=}" ;;
+                *) [[ -z "$t_name" ]] && t_name="$1" ;;
+            esac
+            shift
+        done
+        [[ -z "$t_name" ]] && { echo "error: <tool> is mandatory" >&2; return 1; }
+        [[ -z "$t_env" ]] && { echo "error: no env was set" >&2; return 1; }
+        [[ ! -f "$prov_dir/$t_prov/tools/$t_name" ]] && { echo "error: tool '$t_name' not found in provider '$t_prov'" >&2; return 1; }
+
+        local current="${ENV_TOOLS[$t_env]:-}"
+        local target="${t_prov}@@${t_name}"
+        if [[ ",${current}," != *",${target},"* && !( "$t_prov" == "builtins" && ",${current}," == *",${t_name},"* ) ]]; then
+            local new_val="${current%,}"
+            [[ -n "$new_val" ]] && new_val="${new_val},"
+            new_val="${new_val}${target},"
+            __update "ENV_TOOLS" "$t_env" "$new_val" "set"
+        fi
+
+        if [[ "$t_env" == "${ENV:-}" ]]; then
+            __load tool "$t_name" --from "$prov_dir/$t_prov/tools" -l
+        fi
+    }
+
+    __omni__.tools.rm() {
+        local t_name="" t_env="$ENV" t_prov="builtins"
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--env) t_env="$2"; shift ;;
+                --env=*) t_env="${1#*=}" ;;
+                -p|--provider) t_prov="$2"; shift ;;
+                --provider=*) t_prov="${1#*=}" ;;
+                *) [[ -z "$t_name" ]] && t_name="$1" ;;
+            esac
+            shift
+        done
+        [[ -z "$t_name" ]] && { echo "error: <tool> is mandatory" >&2; return 1; }
+        [[ -z "$t_env" ]] && { echo "error: no env was set" >&2; return 1; }
+
+        local current="${ENV_TOOLS[$t_env]:-}"
+        local target="${t_prov}@@${t_name}"
+        if [[ ",${current}," == *",${target},"* || ( "$t_prov" == "builtins" && ",${current}," == *",${t_name},"* ) ]]; then
+            local new_val=","
+            local OIFS="$IFS"
+            IFS=','
+            local entries=($current)
+            IFS="$OIFS"
+            
+            for entry in "${entries[@]}"; do
+                if [[ -n "$entry" && "$entry" != "$target" && !( "$t_prov" == "builtins" && "$entry" == "$t_name" ) ]]; then
+                    new_val+="${entry},"
+                fi
+            done
+            new_val="${new_val#,}"
+            __update "ENV_TOOLS" "$t_env" "$new_val" "set"
+        fi
+
+        if [[ "$t_env" == "${ENV:-}" ]]; then
+            __prune "$t_name" 2>/dev/null || true
+            unset -f "$t_name" "${t_name}.__compl__" "${t_name}.__help__" "${t_name}.__init__" "${t_name}.__aliases__" 2>/dev/null || true
+        fi
+    }
+
+    __omni__.tools.call() {
+        local t_name="" t_prov="builtins"
+        local args=()
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -p|--provider) t_prov="$2"; shift ;;
+                --provider=*) t_prov="${1#*=}" ;;
+                *)
+                    if [[ -z "$t_name" ]]; then t_name="$1"
+                    else args+=("$1"); fi
+                    ;;
+            esac
+            shift
+        done
+        [[ -z "$t_name" ]] && { echo "error: <tool> is mandatory" >&2; return 1; }
+        
+        local prov_dir="${OMNI:-$HOME/.omni}/providers"
+        local tool_dir="$prov_dir/$t_prov/tools"
+        [[ "$t_prov" == "builtins" && -d "$__OMNI_TOOLS" ]] && tool_dir="$__OMNI_TOOLS"
+
+        [[ ! -f "$tool_dir/$t_name" ]] && { echo "error: tool '$t_name' not found in provider '$t_prov'" >&2; return 1; }
+
+        __load tool "$t_name" --from "$tool_dir"
+        "$t_name" "${args[@]}"
+    }
+
+    __omni__.tools() {
+        local cmd="$1"
+        [[ -z "$cmd" || "$cmd" == "--help" || "$cmd" == "-h" ]] && { __omni__.tools.__help__; return 0; }
+        shift
+        case "$cmd" in
+            ls)   __omni__.tools.ls "$@" ;;
+            use)  __omni__.tools.use "$@" ;;
+            rm)   __omni__.tools.rm "$@" ;;
+            call) __omni__.tools.call "$@" ;;
+            *)    echo "omni tools: Unknown command '$cmd'" >&2; return 1 ;;
+        esac
+    }
+
+    __omni__.tools.__compl__() {
+        local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}" base_cmd="${COMP_WORDS[1]:-}"
+        if [[ "${COMP_CWORD}" == 1 ]]; then 
+            COMPREPLY=( $(compgen -W "ls use rm call --help -h" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$prev" == "-e" || "$prev" == "--env" ]]; then
+            COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$prev" == "-p" || "$prev" == "--provider" ]]; then
+            COMPREPLY=( $(compgen -W "${!PROVIDERS_LOCAL[*]} ${!PROVIDERS_REMOTE[*]}" -- "$cur") )
+            return 0
+        fi
+
+        local t_prov="builtins"
+        for ((i=1; i<COMP_CWORD; i++)); do
+            if [[ "${COMP_WORDS[i]}" == "-p" || "${COMP_WORDS[i]}" == "--provider" ]]; then
+                t_prov="${COMP_WORDS[i+1]:-}"
+                break
+            elif [[ "${COMP_WORDS[i]}" == "--provider="* ]]; then
+                t_prov="${COMP_WORDS[i]#*=}"
+                break
+            fi
+        done
+
+        _list_tools_in_dir() {
+            local p="$1"
+            local prov_dir="${OMNI:-$HOME/.omni}/providers"
+            local tool_dir="$prov_dir/$p/tools"
+            [[ "$p" == "builtins" && -d "$__OMNI_TOOLS" ]] && tool_dir="$__OMNI_TOOLS"
+            if [[ -d "$tool_dir" ]]; then
+                for f in "$tool_dir"/*; do [[ -f "$f" ]] && echo "${f##*/}"; done
+            fi
+        }
+
+        _list_active_tools() {
+            local e="${ENV:-}" p="$1"
+            local current="${ENV_TOOLS[$e]:-}"
+            local OIFS="$IFS"
+            IFS=','
+            local entries=($current)
+            IFS="$OIFS"
+            for entry in "${entries[@]}"; do
+                if [[ -n "$entry" ]]; then
+                    if [[ "$entry" == "${p}@@"* ]]; then echo "${entry#*@@}"
+                    elif [[ "$entry" != *"@@"* && "$p" == "builtins" ]]; then echo "$entry"
+                    fi
+                fi
+            done
+        }
+
+        _is_flag_value() {
+            [[ "$prev" == "-e" || "$prev" == "--env" || "$prev" == "-p" || "$prev" == "--provider" ]]
+        }
+
+        if [[ "$base_cmd" == "call" ]]; then
+            local t_name="" tool_idx=-1
+            for ((i=2; i<=COMP_CWORD; i++)); do
+                if [[ "${COMP_WORDS[i]}" == "-p" || "${COMP_WORDS[i]}" == "--provider" ]]; then i=$((i+1))
+                elif [[ "${COMP_WORDS[i]}" == "--provider="* ]]; then :
+                elif [[ -z "$t_name" && "${COMP_WORDS[i]}" != -* ]]; then
+                    t_name="${COMP_WORDS[i]}"
+                    tool_idx=$i
+                    break
+                fi
+            done
+
+            if [[ -n "$t_name" && $COMP_CWORD -gt $tool_idx ]]; then
+                local prov_dir="${OMNI:-$HOME/.omni}/providers"
+                local tool_dir="$prov_dir/$t_prov/tools"
+                [[ "$t_prov" == "builtins" && -d "$__OMNI_TOOLS" ]] && tool_dir="$__OMNI_TOOLS"
+
+                if ! declare -f "${t_name}.__compl__" >/dev/null 2>&1; then
+                    [[ -f "$tool_dir/$t_name" ]] && __load tool "$t_name" --from "$tool_dir" >/dev/null 2>&1
+                fi
+                if declare -f "${t_name}.__compl__" >/dev/null 2>&1; then
+                    local -a COMP_WORDS_BACKUP=("${COMP_WORDS[@]}")
+                    local COMP_CWORD_BACKUP=$COMP_CWORD
+                    COMP_WORDS=( "${COMP_WORDS[@]:$tool_idx}" )
+                    COMP_CWORD=$((COMP_CWORD - tool_idx))
+                    "${t_name}.__compl__"
+                    COMP_WORDS=("${COMP_WORDS_BACKUP[@]}")
+                    COMP_CWORD=$COMP_CWORD_BACKUP
+                fi
+                return 0
+            fi
+        fi
+
+        case "$base_cmd" in
+            ls)
+                if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-e --env -p --provider -a --all" -- "$cur") ); fi ;;
+            use|call)
+                if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-e --env -p --provider" -- "$cur") )
+                elif ! _is_flag_value; then COMPREPLY=( $(compgen -W "$(_list_tools_in_dir "$t_prov")" -- "$cur") ); fi ;;
+            rm)
+                if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-e --env -p --provider" -- "$cur") )
+                elif ! _is_flag_value; then COMPREPLY=( $(compgen -W "$(_list_active_tools "$t_prov")" -- "$cur") ); fi ;;
+        esac
+    } 
+
+    __omni__.tools.__init__() { __compl __omni__.tools; }
+} 

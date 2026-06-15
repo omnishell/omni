@@ -1,0 +1,173 @@
+#! /bin/bash
+
+__import__() {
+
+    __import__.__help__() {
+        echo """ABOUT
+    the omni context import system
+USAGE: 
+    import <ctx> [of <prov>] | import <attr> from <ctx> [in <prov>]
+FLAGS:
+  -h, --help    Show this help""" >&2
+    }
+
+    import() {
+        if [[ "$1" == "--help" || "$1" == "-h" ]]; then __import__.__help__; return 0; fi
+        local target="" context="" provider=""
+
+        if [[ $# -eq 1 ]]; then
+            target="*"
+            context="$1"
+        elif [[ "$2" == "of" ]]; then
+            target="*"
+            context="$1"
+            provider="$3"
+        elif [[ "$2" == "from" && $# -eq 3 ]]; then
+            target="$1"
+            context="$3"
+        elif [[ "$2" == "from" && ("$4" == "in" || "$4" == "of") ]]; then
+            target="$1"
+            context="$3"
+            provider="$5"
+        else
+            __log "Invalid syntax. Usage: import <ctx> [of <prov>] | import <attr> from <ctx> [in <prov>]" -t error -l import
+            return 1
+        fi
+
+        if [[ "$target" != "*" && "$target" != *".*" ]]; then
+            if declare -f "$target" >/dev/null 2>&1; then return 0; fi
+        fi
+        if [[ "$target" == "*" && -z "$provider" ]]; then
+            if [[ -v "CONTEXTS[$context]" && -n "${CONTEXTS[$context]}" ]]; then return 0; fi
+        fi
+
+        local dest=""
+        local caller="${FUNCNAME[1]:-}"
+        local safe_caller="${caller//-/_}"
+
+        if [[ -z "$provider" ]]; then
+            dest="$__OMNI_CONTEXTS/$context"
+            if [[ ! -f "$dest" ]]; then
+                __log "Builtin context '$context' not found in $__OMNI_CONTEXTS." -t error -l import
+                return 1
+            fi
+        else
+            dest="$__OMNI_TOOLS/$context"
+            
+            if [[ ! -f "$dest" ]]; then
+                local p_data=""
+                if [[ -n "$caller" ]]; then
+                    local local_dict="__${safe_caller^^}_PROVIDERS"
+                    if declare -p "$local_dict" >/dev/null 2>&1; then
+                        local -n dict_ref="$local_dict"
+                        p_data="${dict_ref[$provider]:-}"
+                    fi
+                fi
+
+                [[ -z "$p_data" ]] && p_data="${PROVIDERS[$provider]:-}"
+                
+                if [[ -z "$p_data" ]]; then
+                    __log "Provider '$provider' not found." -t error -l import
+                    return 1
+                fi
+
+                local p_url=$(echo "$p_data" | grep -o 'url:[^,]*' | cut -d: -f2- | tr -d '\n')
+                local p_path=$(echo "$p_data" | grep -o 'path:[^,]*' | cut -d: -f2- | tr -d '\n')
+
+                if [[ -z "$p_url" ]]; then
+                    local full_path="$p_path/$context"
+                    full_path=$(echo "$full_path" | sed -E 's|//+|/|g')
+                    if [[ -f "$full_path" ]]; then ln -sf "$full_path" "$dest"
+                    else __log "Local tool not found at '$full_path'" -t error -l import; return 1; fi
+                else
+                    local full_url="$p_url"
+                    [[ -n "$p_path" ]] && full_url="${full_url%/}/$p_path"
+                    full_url="${full_url%/}/$context"
+                
+                    full_url=$(echo "$full_url" | sed -E 's|([^:])//+|\1/|g')
+
+                    if [[ "$full_url" == *github.com* ]]; then
+                        local without_proto="${full_url#*://}"
+                        IFS='/' read -ra parts <<< "$without_proto"
+                        if [[ "${parts[0]}" == "github.com" ]]; then
+                            local user="${parts[1]}"
+                            local repo="${parts[2]}"
+                            local file_path=""
+                            for ((i=3; i<${#parts[@]}; i++)); do file_path="${file_path}/${parts[i]}"; done
+                            full_url="https://raw.githubusercontent.com/${user}/${repo}/main/${file_path#/}"
+                        fi
+                    fi
+                    
+                    __log "Fetching dependency '$context'..." -t info -l import
+                    if curl -fsSL "$full_url" -o "$dest"; then chmod +x "$dest"
+                    else __log "Failed to fetch '$context'" -t error -l import; rm -f "$dest"; return 1; fi
+                fi
+            fi
+
+            if [[ -n "$caller" ]]; then
+                local current_imports="${IMPORTS[$safe_caller]:-}"
+                local import_entry="${provider}:${context}"
+                if [[ ",${current_imports}," != *",${import_entry},"* ]]; then
+                    __update "IMPORTS" "$safe_caller" "${current_imports}${import_entry}," "set"
+                fi
+            fi
+        fi
+
+        __load context "$context" --from "$dest" -l
+
+        if [[ "$target" == "*" || "$target" == "$context" ]]; then return 0; fi
+
+        local ctx_attrs=",${CONTEXTS[$context]:-},"
+
+        if [[ "$target" == *".*" ]]; then
+            local namespace="${target%.*}"
+            local matched=0
+            for attr in ${CONTEXTS[$context]//,/ }; do
+                if [[ "$attr" == "${namespace}."* ]]; then
+                    eval "${attr}() { ${context}.${attr} \"\$@\"; }"
+                    matched=1
+                fi
+            done
+            [[ $matched == 0 ]] && __log "No attributes matching '${namespace}.*' found in '$context'." -t error -l import
+        else
+            if [[ "$ctx_attrs" == *",${target},"* ]]; then
+                eval "${target}() { ${context}.${target} \"\$@\"; }"
+                
+                for attr in ${CONTEXTS[$context]//,/ }; do
+                    if [[ "$attr" == "${target}."* ]]; then
+                        eval "${attr}() { ${context}.${attr} \"\$@\"; }"
+                    fi
+                done
+            else
+                __log "Attribute '${target}' not found in context '$context'." -t error -l import
+                return 1
+            fi
+        fi
+    }
+
+    __import__.__compl__() {
+        local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
+        COMPREPLY=()
+        if [[ "${COMP_CWORD}" == 1 ]]; then 
+            [[ "$cur" == -* ]] && COMPREPLY=( $(compgen -W "--help -h" -- "$cur") )
+            return 0
+        fi
+        if [[ "${COMP_CWORD}" == 2 ]]; then COMPREPLY=( $(compgen -W "of from" -- "$cur") ); return 0; fi
+        if [[ "${COMP_WORDS[2]}" == "of" && "${COMP_CWORD}" == 3 ]]; then 
+            COMPREPLY=( $(compgen -W "${!PROVIDERS[*]}" -- "$cur") )
+            return 0
+        fi
+        if [[ "${COMP_WORDS[2]}" == "from" && "${COMP_CWORD}" == 4 ]]; then 
+            COMPREPLY=( $(compgen -W "in of" -- "$cur") )
+            return 0
+        fi
+        if [[ ("${COMP_WORDS[4]}" == "in" || "${COMP_WORDS[4]}" == "of") && "${COMP_CWORD}" == 5 ]]; then
+            COMPREPLY=( $(compgen -W "${!PROVIDERS[*]}" -- "$cur") )
+            return 0
+        fi
+    }
+
+    __import__.__init__() {
+        __compl import
+    }
+}
