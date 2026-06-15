@@ -50,13 +50,38 @@ INFO:
     }
 
     omni() {
+        case "$1" in
+            -c|--conf)
+                (
+                    export OMNIRC="$2"
+                    unset ENV __ENV ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS
+                    declare -gA ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS
+                    [[ -f "$OMNIRC" ]] && source "$OMNIRC"
+                    shift 2
+                    omni "$@"
+                )
+                return $?
+                ;;
+            --conf=*)
+                (
+                    export OMNIRC="${1#*=}"
+                    unset ENV __ENV ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS
+                    declare -gA ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS
+                    [[ -f "$OMNIRC" ]] && source "$OMNIRC"
+                    shift
+                    omni "$@"
+                )
+                return $?
+                ;;
+        esac
+
         local cmd="$1"
         [[ -z "$cmd" || "$cmd" == "--help" || "$cmd" == "-h" ]] && { __omni__.__help__; return 0; }
         shift
 
         case "$cmd" in
             doc)
-                bash $__OMNI/doc --docs $__OMNI/docs
+                bash "$__OMNI/doc" --docs "$__OMNI/docs"
                 ;;
             init)
                 __omni__.init "$@"
@@ -94,19 +119,40 @@ INFO:
                 return 1
                 ;;
         esac
-    }
+    } 
 
     __omni__.__compl__() {
-        local cur="${COMP_WORDS[COMP_CWORD]}"
-        if [[ "${COMP_CWORD}" == 1 ]]; then
+        local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
+        local cmd_idx=1
+
+        if [[ "${COMP_WORDS[1]}" == "-c" || "${COMP_WORDS[1]}" == "--conf" ]]; then
+            cmd_idx=3
+        elif [[ "${COMP_WORDS[1]}" == "--conf="* ]]; then
+            cmd_idx=2
+        fi
+
+        if [[ ${COMP_CWORD} -eq 1 ]]; then
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--conf" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -W "$__OMNI_COMMANDS --conf" -- "$cur") )
+            fi
+            return 0
+        fi
+
+        if [[ "$prev" == "-c" || "$prev" == "--conf" ]] && [[ ${COMP_CWORD} -eq 2 && $cmd_idx -eq 3 ]]; then
+            compopt -o default
+            return 0
+        fi
+
+        if [[ ${COMP_CWORD} -eq $cmd_idx ]]; then
             COMPREPLY=( $(compgen -W "$__OMNI_COMMANDS" -- "$cur") )
             return 0
         fi
 
-        local cmd="${COMP_WORDS[1]}"
+        local cmd="${COMP_WORDS[cmd_idx]}"
         
         if [[ "$cmd" == "init" ]]; then
-            local prev="${COMP_WORDS[COMP_CWORD-1]}"
             if [[ "$prev" == "-c" || "$prev" == "--conf" ]]; then
                 compopt -o default
                 return 0
@@ -129,8 +175,8 @@ INFO:
                 local -a COMP_WORDS_BACKUP=("${COMP_WORDS[@]}")
                 local COMP_CWORD_BACKUP=$COMP_CWORD
 
-                COMP_WORDS=( "${COMP_WORDS[@]:1}" )
-                ((COMP_CWORD--))
+                COMP_WORDS=( "${COMP_WORDS[@]:$cmd_idx}" )
+                COMP_CWORD=$((COMP_CWORD - cmd_idx))
 
                 "${__compl__}"
 

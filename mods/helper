@@ -46,10 +46,10 @@ __helper__() {
         [[ -z "$context" ]] && return 0
         unset -f "__${context}__" 2>/dev/null || true
         
-        local funcs=( $(compgen -A function "${context}.") )
+        local funcs=( $(compgen -A function "${context}.") $(compgen -A function "__${context}__.") )
         local f
         for f in "${funcs[@]}"; do
-            if [[ "$f" != "${context}.__compl__" && "$f" != "${context}.__help__" ]]; then
+            if [[ "$f" != "__${context}__.__compl__" && "$f" != "__${context}__.__help__" && "$f" != "${context}.__compl__" && "$f" != "${context}.__help__" ]]; then
                 unset -f "$f" 2>/dev/null || true
             fi
         done
@@ -109,7 +109,7 @@ __helper__() {
     __lazy() {
         local name="$1" path="$2"
         local core_stub="
-            unset -f ${name} ${name}.__compl__ ${name}.__help__ 2>/dev/null || true
+            unset -f ${name} __${name}__.__compl__ __${name}__.__help__ 2>/dev/null || true
             source \"$path\"
             __${name}__ 2>/dev/null || true
             __init \"${name}\"
@@ -121,34 +121,41 @@ __helper__() {
             $core_stub
             ${name} \"\$@\"
         }
-        ${name}.__compl__() {
+        __${name}__.__compl__() {
             $core_stub
-            ${name}.__compl__ \"\$@\"
+            __${name}__.__compl__ \"\$@\"
         }
-        ${name}.__help__() {
+        __${name}__.__help__() {
             $core_stub
-            ${name}.__help__ \"\$@\"
+            __${name}__.__help__ \"\$@\"
         }
         "
     } 
 
     __init() {
-        if declare -f "${1}.__init__" >/dev/null; then "${1}.__init__"; fi
+        if declare -f "__${1}__.__init__" >/dev/null; then "__${1}__.__init__"; 
+        elif declare -f "${1}.__init__" >/dev/null; then "${1}.__init__"; fi
     }
 
     __help() {
         local script="$1"; shift
-        if declare -f "${script}.__help__" >/dev/null; then "${script}.__help__" "$@"
+        if declare -f "__${script}__.__help__" >/dev/null; then "__${script}__.__help__" "$@"
+        elif declare -f "${script}.__help__" >/dev/null; then "${script}.__help__" "$@"
         else echo "No help available for '$script'" >&2; return 1; fi
     }
 
     __aliases() {
-        if declare -f "${1}.__aliases__" >/dev/null; then "${1}.__aliases__"; fi
+        if declare -f "__${1}__.__aliases__" >/dev/null; then "__${1}__.__aliases__";
+        elif declare -f "${1}.__aliases__" >/dev/null; then "${1}.__aliases__"; fi
     }
 
     __compl() {
         local script="$1"
-        eval "complete -o default -o bashdefault -F ${script}.__compl__ $script"
+        if declare -f "__${script}__.__compl__" >/dev/null; then
+            eval "complete -o default -o bashdefault -F __${script}__.__compl__ $script"
+        else
+            eval "complete -o default -o bashdefault -F ${script}.__compl__ $script"
+        fi
     }
 
     __complete() { __compl "$@"; }
