@@ -58,6 +58,7 @@ INFO:
                     declare -gA ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS
                     [[ -f "$OMNIRC" ]] && source "$OMNIRC"
                     shift 2
+                    [[ $# -eq 0 ]] && return 0
                     omni "$@"
                 )
                 return $?
@@ -69,6 +70,7 @@ INFO:
                     declare -gA ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS
                     [[ -f "$OMNIRC" ]] && source "$OMNIRC"
                     shift
+                    [[ $# -eq 0 ]] && return 0
                     omni "$@"
                 )
                 return $?
