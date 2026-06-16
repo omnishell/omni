@@ -1,14 +1,12 @@
 #! /bin/bash
+
 __omni__() {
     __OMNI_COMMANDS="doc init builtins envs tools providers contexts run ssh"
-
     __omni__.__help__() {
         echo """ABOUT:
     the omnishell cli
-
 USAGE:
     omni <command> [args]
-
 COMMANDS:
     doc
     init
@@ -19,7 +17,6 @@ COMMANDS:
     contexts
     run
     ssh
-
 INFO:
     for custom help, try 'omni <command> --help'""" >&3
     }
@@ -32,14 +29,11 @@ INFO:
             esac
             shift
         done
-
         local rcfile="${OMNIRC:-$HOME/.omnirc}"
         export OMNIRC="$rcfile"
-
         if [[ ! -f "$rcfile" ]]; then
             touch "$rcfile" 2>/dev/null
         fi
-
         if [[ -f "$rcfile" ]]; then
             source "$rcfile"
             declare -f __log >/dev/null && __log "Sourced $rcfile" -t success -l omni
@@ -55,7 +49,8 @@ INFO:
                 (
                     export OMNIRC="$2"
                     unset ENV __ENV ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS
-                    declare -gA ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS
+                    declare -ga ENVS
+                    declare -gA ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS
                     [[ -f "$OMNIRC" ]] && source "$OMNIRC"
                     shift 2
                     [[ $# -eq 0 ]] && return 0
@@ -67,7 +62,8 @@ INFO:
                 (
                     export OMNIRC="${1#*=}"
                     unset ENV __ENV ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS
-                    declare -gA ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS
+                    declare -ga ENVS
+                    declare -gA ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS
                     [[ -f "$OMNIRC" ]] && source "$OMNIRC"
                     shift
                     [[ $# -eq 0 ]] && return 0
@@ -121,7 +117,7 @@ INFO:
                 return 1
                 ;;
         esac
-    } 
+    }
 
     __omni__.__compl__() {
         local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -153,7 +149,6 @@ INFO:
         fi
 
         local cmd="${COMP_WORDS[cmd_idx]}"
-        
         if [[ "$cmd" == "init" ]]; then
             if [[ "$prev" == "-c" || "$prev" == "--conf" ]]; then
                 compopt -o default
@@ -166,22 +161,19 @@ INFO:
         if [[ " $__OMNI_COMMANDS " == *" $cmd "* && "$cmd" != "init" ]]; then
             local __cmd__="__omni__.${cmd}"
             local __compl__="${__cmd__}.__compl__"
-            
+
             if ! declare -f "${__compl__}" >/dev/null 2>&1; then
                 source "$__OMNI_MODS/omni.d/$cmd" 2>/dev/null
                 "__omni.${cmd}__" 2>/dev/null || true
                 "${__cmd__}.__init__" 2>/dev/null || true
             fi
-            
+
             if declare -f "${__compl__}" >/dev/null 2>&1; then
                 local -a COMP_WORDS_BACKUP=("${COMP_WORDS[@]}")
                 local COMP_CWORD_BACKUP=$COMP_CWORD
-
                 COMP_WORDS=( "${COMP_WORDS[@]:$cmd_idx}" )
                 COMP_CWORD=$((COMP_CWORD - cmd_idx))
-
                 "${__compl__}"
-
                 COMP_WORDS=("${COMP_WORDS_BACKUP[@]}")
                 COMP_CWORD=$COMP_CWORD_BACKUP
             fi
@@ -191,18 +183,19 @@ INFO:
     __omni__.__init__() {
         local scripts=("$__OMNI_MODS/omni.d/*")
         local script name
-        
+
         for script in ${scripts[@]}; do
             source "$script"
             name="$(basename "$script")"
-            
-            if declare -f "__omni.${name}__" > /dev/null 2>&1; then 
+
+            if declare -f "__omni.${name}__" > /dev/null 2>&1; then
                 "__omni.${name}__" >/dev/null 2>&1
                 unset -f "__omni.${name}__"
             fi
         done
-        
+
         complete -o default -o bashdefault -F __omni__.__compl__ omni
-    } 
+    }
+
     __omni__.__init__
-} 
+}

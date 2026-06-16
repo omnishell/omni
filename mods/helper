@@ -49,8 +49,10 @@ __helper__() {
         local funcs=( $(compgen -A function "${context}.") $(compgen -A function "__${context}__.") )
         local f
         for f in "${funcs[@]}"; do
-            if [[ "$f" != "__${context}__.__compl__" && "$f" != "__${context}__.__help__" && "$f" != "${context}.__compl__" && "$f" != "${context}.__help__" ]]; then
-                unset -f "$f" 2>/dev/null || true
+            if [[ "$f" == *".__"* ]]; then
+                if [[ "$f" != *".__compl__" && "$f" != *".__help__" ]]; then
+                    unset -f "$f" 2>/dev/null || true
+                fi
             fi
         done
         
@@ -64,7 +66,8 @@ __helper__() {
         local context="$1"
         [[ -z "$context" ]] && return 0
         unset -f "__${context}__" 2>/dev/null || true
-        local funcs=( $(compgen -A function "${context}.") )
+        local funcs=( $(compgen -A function "${context}.") $(compgen -A function "__${context}__.") )
+        local f
         for f in "${funcs[@]}"; do
             unset -f "$f" 2>/dev/null || true
         done
@@ -78,7 +81,8 @@ __helper__() {
         local context="$1"
         [[ -z "$context" ]] && return 0
         unset -f "__${context}__" 2>/dev/null || true
-        local funcs=( $(compgen -A function "${context}") )
+        local funcs=( $(compgen -A function "${context}") $(compgen -A function "__${context}__.") )
+        local f
         for f in "${funcs[@]}"; do
             unset -f "$f" 2>/dev/null || true
         done
