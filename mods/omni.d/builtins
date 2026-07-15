@@ -1,3 +1,5 @@
+#! /bin/bash
+
 __omni.builtins__() {
     __BUILTINS__="has clip cd back home ls lf ld la laf lad ln mf md rm mv cp"
     __declare --dict ENV_BUILTINS
@@ -5,18 +7,14 @@ __omni.builtins__() {
     __omni__.builtins.__help__() {
         echo """ABOUT:
     omni builtin utilities manager
-
 USAGE:
     builtins <command> [args]
-
 COMMANDS:
     ls      [-e|--env <env>] [-a|--all]
     set     <builtin> <func> [-e|--env <env> | -g|--global]
     use     <builtin> [-e|--env <env> | -a|--all]
-    rm  
-    <builtin> [-e|--env <env> | -g|--global] [-f|--force] [-r|--recursive]
+    rm      <builtin> [-e|--env <env> | -g|--global] [-f|--force] [-r|--recursive]
     reset   resets all builtins to defaults
-
 INFO:
     exposes commands (ls, cd, etc.) directly to the shell.""" >&2
     }
@@ -117,7 +115,8 @@ INFO:
         for i in "$@"; do ! command -v "$i" > /dev/null 2>&1 && return 1; done; return 0;
     }
     __omni__.builtins.cmd.clip() {
-        if __omni__.builtins.cmd.has xclip; then xclip -selection clipboard; elif __omni__.builtins.cmd.has xsel; then xsel -clipboard; else return 1; fi;
+        if __omni__.builtins.cmd.has xclip; then xclip -selection clipboard;
+        elif __omni__.builtins.cmd.has xsel; then xsel -clipboard; else return 1; fi;
     }
     __omni__.builtins.cmd.cd() {
         command pushd -- "$@" > /dev/null 2>&1;
@@ -135,16 +134,20 @@ INFO:
         command ls --almost-all --group-directories-first --color=always "$@";
     }
     __omni__.builtins.cmd.lf() {
-        local t="${1:-.}"; (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type f ! -name '.*' -printf '%f\0' | xargs -0r ls --group-directories-first --color=always);
+        local t="${1:-.}";
+        (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type f ! -name '.*' -printf '%f\0' | xargs -0r ls --group-directories-first --color=always);
     }
     __omni__.builtins.cmd.ld() {
-        local t="${1:-.}"; (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' -printf '%f\0' | xargs -0r ls --group-directories-first --color=always);
+        local t="${1:-.}";
+        (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' -printf '%f\0' | xargs -0r ls --group-directories-first --color=always);
     }
     __omni__.builtins.cmd.laf() {
-        local t="${1:-.}"; (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type f -printf '%f\0' | xargs -0r ls --group-directories-first --color=always);
+        local t="${1:-.}";
+        (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type f -printf '%f\0' | xargs -0r ls --group-directories-first --color=always);
     }
     __omni__.builtins.cmd.lad() {
-        local t="${1:-.}"; (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type d -printf '%f\0' | xargs -0r ls --group-directories-first --color=always);
+        local t="${1:-.}";
+        (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type d -printf '%f\0' | xargs -0r ls --group-directories-first --color=always);
     }
     __omni__.builtins.cmd.ln() {
         command ln -sf "$@";
@@ -153,16 +156,133 @@ INFO:
         command mkdir -p "$@";
     }
     __omni__.builtins.cmd.mf() {
-        for i in "$@"; do local d=$(dirname "$i"); [[ ! -d "$d" ]] && __omni__.builtins.cmd.md "$d"; command touch "$i"; done;
+        for i in "$@"; do local d="${i%/*}"; [[ "$d" == "$i" ]] && d="."; [[ ! -d "$d" ]] && __omni__.builtins.cmd.md "$d"; command touch "$i"; done;
     }
+
     __omni__.builtins.cmd.cp() {
-        if [[ $# -eq 0 ]]; then __omni__.builtins.cmd.clip; elif [[ $# -eq 1 && -f "$1" ]]; then cat "$1" | __omni__.builtins.cmd.clip; else local t="${@: -1}" d; if [[ -d "$t" ]]; then d="$t"; else d=$(dirname "$t"); fi; __omni__.builtins.cmd.md "$d"; command cp -r "$@"; fi;
+        local excludes=() args=()
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--exclude) excludes+=("$2"); shift ;;
+                --exclude=*) excludes+=("${1#*=}") ;;
+                *) args+=("$1") ;;
+            esac
+            shift
+        done
+        if [[ ${#args[@]} -eq 0 ]]; then
+            __omni__.builtins.cmd.clip
+            return 0
+        elif [[ ${#args[@]} -eq 1 && -f "${args[0]}" ]]; then
+            cat "${args[0]}" | __omni__.builtins.cmd.clip
+            return 0
+        fi
+        local dest="${args[-1]}"
+        local d="${dest%/*}"
+        [[ "$d" == "$dest" ]] && d="."
+        __omni__.builtins.cmd.md "$d"
+        local filtered=()
+        for arg in "${args[@]:0:${#args[@]}-1}"; do
+            local skip=0
+            for exc in "${excludes[@]}"; do
+                [[ "$arg" == $exc ]] && skip=1 && break
+            done
+            [[ $skip -eq 0 ]] && filtered+=("$arg")
+        done
+        [[ ${#filtered[@]} -eq 0 ]] && return 0
+        command cp -r "${filtered[@]}" "$dest"
     }
-    __omni__.builtins.cmd.rm() {
-        command rm -rf "$@";
-    }
+
     __omni__.builtins.cmd.mv() {
-        local t="${@: -1}" d; if [[ -d "$t" ]]; then d="$t"; else d=$(dirname "$t"); fi; __omni__.builtins.cmd.md "$d"; command mv "$@";
+        local excludes=() args=()
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--exclude) excludes+=("$2"); shift ;;
+                --exclude=*) excludes+=("${1#*=}") ;;
+                *) args+=("$1") ;;
+            esac
+            shift
+        done
+        local dest="${args[-1]}"
+        local d="${dest%/*}"
+        [[ "$d" == "$dest" ]] && d="."
+        __omni__.builtins.cmd.md "$d"
+        local filtered=()
+        for arg in "${args[@]:0:${#args[@]}-1}"; do
+            local skip=0
+            for exc in "${excludes[@]}"; do
+                [[ "$arg" == $exc ]] && skip=1 && break
+            done
+            [[ $skip -eq 0 ]] && filtered+=("$arg")
+        done
+        [[ ${#filtered[@]} -eq 0 ]] && return 0
+        command mv "${filtered[@]}" "$dest"
+    }
+
+    __omni__.builtins.cmd.rm() {
+        local excludes=() args=() force=0 trash_name=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -e|--exclude) excludes+=("$2"); shift ;;
+                --exclude=*) excludes+=("${1#*=}") ;;
+                -t|--trash) trash_name="$2"; shift ;;
+                --trash=*) trash_name="${1#*=}" ;;
+                -f|--force) force=1 ;;
+                *) args+=("$1") ;;
+            esac
+            shift
+        done
+        local filtered=()
+        for arg in "${args[@]}"; do
+            local skip=0
+            for exc in "${excludes[@]}"; do
+                [[ "$arg" == $exc ]] && skip=1 && break
+            done
+            [[ $skip -eq 0 ]] && filtered+=("$arg")
+        done
+        [[ ${#filtered[@]} -eq 0 ]] && return 0
+
+        if (( force )); then
+            command rm -rf "${filtered[@]}"
+        else
+            local t_env="${ENV:-}"
+            local trash_conf="${ENV_TRASH[$t_env]:-}"
+            
+            if [[ ",${trash_conf}" != *",default:"* ]]; then
+                local def_path="${OMNI_TRASH:-${OMNI:-$HOME/.omni}/trash}"
+                local is_def="true"
+                [[ "$trash_conf" == *:true,* ]] && is_def="false"
+                trash_conf="default:${def_path}:30:${is_def},${trash_conf}"
+            fi
+            
+            local t_path="${OMNI_TRASH:-${OMNI:-$HOME/.omni}/trash}"
+            local t_expire=30
+            if [[ -n "$trash_conf" ]]; then
+                local IFS=','
+                for entry in $trash_conf; do
+                    [[ -z "$entry" ]] && continue
+                    local n="${entry%%:*}"
+                    local rest="${entry#*:}"
+                    local p="${rest%%:*}"
+                    rest="${rest#*:}"
+                    local e="${rest%%:*}"
+                    local d="${rest#*:}"
+                    if [[ "$n" == "$trash_name" || ( -z "$trash_name" && "$d" == "true" ) ]]; then
+                        t_path="$p"
+                        t_expire="$e"
+                        break
+                    fi
+                done
+            fi
+            
+            __omni__.builtins.cmd.md "$t_path"
+            find "$t_path" -mindepth 1 -mtime +$t_expire -delete 2>/dev/null
+            for f in "${filtered[@]}"; do
+                [[ ! -e "$f" ]] && continue
+                local b="${f##*/}"
+                local u="${b}_$(printf "%(%s)T" -1)_$RANDOM"
+                command mv "$f" "$t_path/$u"
+            done
+        fi
     }
 
     declare -gA __OMNI_BUILTINS_FLAGS=(
@@ -175,19 +295,48 @@ INFO:
     __omni__.builtins.__compl__() {
         local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}" base_cmd="${COMP_WORDS[1]:-}"
         if [[ "${COMP_CWORD}" == 1 ]]; then
-            COMPREPLY=( $(compgen -W "ls set use rm reset --help -h" -- "$cur") )
+            COMPREPLY=( $(compgen -W "ls set use rm reset cp mv --help -h" -- "$cur") )
             return 0
         fi
         if [[ "$prev" == "--env" ]]; then
             COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
             return 0
         fi
-        local flags="${__OMNI_BUILTINS_FLAGS[$base_cmd]}"
+        local flags="${__OMNI_BUILTINS_FLAGS[$base_cmd]:-}"
+        
+        if [[ "$base_cmd" == "cp" || "$base_cmd" == "mv" ]]; then
+            flags="--exclude -e"
+            [[ "$cur" == -* ]] && COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
+            return 0
+        fi
+
+        if [[ "$base_cmd" == "rm" ]]; then
+            if [[ " ${__BUILTINS__} " == *" ${COMP_WORDS[2]:-} "* ]]; then
+                flags="${__OMNI_BUILTINS_FLAGS[rm]}"
+            else
+                flags="--exclude -e --trash -t --force -f"
+                if [[ "$prev" == "-t" || "$prev" == "--trash" ]]; then
+                    local t_env="${ENV:-}"
+                    local t_names="default"
+                    if [[ -n "${ENV_TRASH[$t_env]:-}" ]]; then
+                        local IFS=','
+                        for entry in ${ENV_TRASH[$t_env]}; do
+                            [[ -n "$entry" && "${entry%%:*}" != "default" ]] && t_names="${t_names} ${entry%%:*}"
+                        done
+                    fi
+                    COMPREPLY=( $(compgen -W "$t_names" -- "$cur") )
+                    return 0
+                fi
+            fi
+            [[ "$cur" == -* ]] && COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
+            return 0
+        fi
+
         if [[ "$base_cmd" == "ls" || "$base_cmd" == "set" || "$base_cmd" == "reset" ]]; then
             COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
             return 0
         fi
-        if [[ "$base_cmd" == "use" || "$base_cmd" == "rm" ]]; then
+        if [[ "$base_cmd" == "use" ]]; then
             COMPREPLY=( $(compgen -W "$__BUILTINS__ $flags" -- "$cur") )
             return 0
         fi
