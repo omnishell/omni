@@ -5,10 +5,8 @@ __omni__() {
     declare -gA ENV_TRASH 2>/dev/null || true
 
     __omni__.__help__() {
-        echo """ABOUT:
-    the omnishell cli
-USAGE:
-    omni <command> [args]
+    echo """ABOUT:     the omnishell cli
+USAGE:     omni <command> [args]
 COMMANDS:
     doc
     init
@@ -20,10 +18,9 @@ COMMANDS:
     run
     ssh
     trash
-INFO:
-    for custom help, try 'omni <command> --help'""" >&3
+INFO:     for custom help, try 'omni <command> --help'""" >&2
     }
-
+    
     __omni__.init() {
         while [[ $# -gt 0 ]]; do
             case "$1" in

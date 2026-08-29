@@ -271,8 +271,9 @@ __helper__() {
         [[ -z "$name" ]] && return 1
         case "$type" in
             env)      [[ -n "${ENV_VARS[$name]}" ]] && return 0 || return 1 ;;
-            tool)     
+            tool)
                 declare -p TOOLS >/dev/null 2>&1 && [[ -n "${TOOLS[$name]}" ]] && return 0
+                [[ -f "$__OMNI_TOOLS/$name/$name" ]] && return 0
                 [[ -f "$__OMNI_TOOLS/$name" ]] && return 0
                 return 1 ;;
             provider) [[ -n "${PROVIDERS[$name]}" ]] && return 0 || return 1 ;;
@@ -290,9 +291,10 @@ __helper__() {
                 local path=""
                 if [[ -f "$name" ]]; then path="$name"
                 elif [[ -f "$contexts_dir/$name" ]]; then path="$contexts_dir/$name"
+                elif [[ -f "$__OMNI_TOOLS/$name/$name" ]]; then path="$__OMNI_TOOLS/$name/$name"
                 elif [[ -f "$__OMNI_TOOLS/$name" ]]; then path="$__OMNI_TOOLS/$name"; fi
                 if [[ -n "$path" ]]; then
-                    local basename=$(basename "$name")
+                    local basename="${name##*/}"
                     local has_init=0 has_attrs=0
                     grep -qE "^ *${basename}\.__init__" "$path" && has_init=1
                     grep -E "^[[:space:]]*(function[[:space:]]+)?${basename}\." "$path" | grep -qvE "\.__[a-zA-Z0-9_]+__" && has_attrs=1
@@ -301,7 +303,7 @@ __helper__() {
                          echo "$sub_funcs" | grep -q "declare -f ${basename}\.__init__" && has_init=1
                          echo "$sub_funcs" | grep -E "declare -f ${basename}\." | grep -qvE "\.__[a-zA-Z0-9_]+__" && has_attrs=1
                     fi
-                    [[ $has_init == 0 ]] && return 1 
+                    [[ $has_init == 0 ]] && return 1
                     if (( is_dec )); then [[ $has_attrs == 1 ]] && return 0 || return 1; fi
                     if (( is_pure )); then [[ $has_attrs == 0 ]] && return 0 || return 1; fi
                     return 0
@@ -334,6 +336,7 @@ __helper__() {
         local path="" contexts_dir="${__OMNI_CONTEXTS:-$__OMNI/contexts}"
         if [[ -f "$name" ]]; then path="$name"
         elif [[ -f "$contexts_dir/$name" ]]; then path="$contexts_dir/$name"
+        elif [[ -f "$__OMNI_TOOLS/$name/$name" ]]; then path="$__OMNI_TOOLS/$name/$name"
         elif [[ -f "$__OMNI_TOOLS/$name" ]]; then path="$__OMNI_TOOLS/$name"; fi
         if [[ -n "$path" ]]; then
             local funcs=$( ( source "$path" 2>/dev/null; compgen -A function "${name}." ) | sed -E "s/^${name}\.//" | grep -vE '^__[a-zA-Z0-9_]+__$' | sort -u | tr '\n' ' ' | sed 's/ *$//' )
@@ -343,7 +346,7 @@ __helper__() {
     }
 
     __get() { [[ -n "$2" ]] && echo "${1}.${2}" && return 0 || return 1; }
-
+    
     __load() {
         local type="$1"; shift
         local targets=() path="" is_lazy=0
@@ -360,14 +363,22 @@ __helper__() {
         [[ ${#targets[@]} -eq 0 || -z "$path" ]] && return 1
         if [[ "${targets[0]}" == "*" ]]; then
             local lazy_flag=""; (( is_lazy )) && lazy_flag="-l"
-            shopt -s nullglob; for f in "$path"/*; do [[ -f "$f" ]] && __load "$type" "$(basename "$f")" --from "$path" $lazy_flag; done; shopt -u nullglob; return 0
+            shopt -s nullglob; for f in "$path"/*; do [[ -f "$f" ]] && __load "$type" "${f##*/}" --from "$path" $lazy_flag; done; shopt -u nullglob; return 0
         fi
         if [[ ${#targets[@]} -gt 1 ]]; then
             local lazy_flag=""; (( is_lazy )) && lazy_flag="-l"
             for t in "${targets[@]}"; do __load "$type" "$t" --from "$path" $lazy_flag; done; return 0
         fi
-        local target="${targets[0]}" full_path="$path"
-        [[ -d "$full_path" ]] && full_path="${full_path%/}/$target"
+        local target="${targets[0]}" full_path="${path%/}"
+        if [[ "$type" == "tool" ]]; then
+            if [[ -f "$full_path/$target/$target" ]]; then
+                full_path="$full_path/$target/$target"
+            else
+                full_path="$full_path/$target"
+            fi
+        else
+            [[ -d "$full_path" ]] && full_path="$full_path/$target"
+        fi
         [[ ! -f "$full_path" ]] && return 1
         if [[ "$type" == "context" ]]; then
             source "$full_path"
