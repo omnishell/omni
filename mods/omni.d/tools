@@ -94,6 +94,16 @@ COMMANDS:
             return 1
         fi
 
+        if [[ -d "$prov_dir/$t_prov/tools/$t_name" && ( -f "$prov_dir/$t_prov/tools/$t_name/init" || -f "$prov_dir/$t_prov/tools/$t_name/$t_name" ) ]]; then
+            echo "$prov_dir/$t_prov/tools/$t_name"
+            return 0
+        elif [[ -d "$tools_cache/$t_name" && ( -f "$tools_cache/$t_name/init" || -f "$tools_cache/$t_name/$t_name" ) ]]; then
+            mkdir -p "$prov_dir/$t_prov/tools" 2>/dev/null || true
+            ln -sfn "$tools_cache/$t_name" "$prov_dir/$t_prov/tools/$t_name"
+            echo "$tools_cache/$t_name"
+            return 0
+        fi
+
         local p_init="$(_get_provider_init "$t_prov")"
         if [[ -z "$p_init" || ! -f "$p_init" ]]; then
             if [[ -n "${PROVIDERS_LOCAL[$t_prov]:-}" || -n "${PROVIDERS_REMOTE[$t_prov]:-}" ]]; then
