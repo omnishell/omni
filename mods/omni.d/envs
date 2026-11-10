@@ -261,6 +261,7 @@ COMMANDS:
         fi
 
         [[ -f "$ENV_PATH/init" ]] && source "$ENV_PATH/init"
+        return 0
     } 
     __omni__.envs() {
         local cmd="$1"

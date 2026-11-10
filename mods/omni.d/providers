@@ -101,6 +101,7 @@ COMMANDS:
             fi
             [[ -d "$p_dir/tools" ]] && ln -sfn "$p_dir/tools" "$prov_dir/$p_name/tools"
             [[ -d "$p_dir/contexts" ]] && ln -sfn "$p_dir/contexts" "$prov_dir/$p_name/contexts"
+            return 0
         elif [[ -n "${PROVIDERS_REMOTE[$p_name]:-}" ]]; then
             local data="${PROVIDERS_REMOTE[$p_name]}"
             local r_url="${data%%@@*}"
@@ -115,6 +116,7 @@ COMMANDS:
                     [[ -f "$(dirname "$__OMNI")/provider/init" ]] && cp "$(dirname "$__OMNI")/provider/init" "$prov_dir/$p_name/init"
                 fi
             fi
+            return 0
         else
             return 1
         fi
@@ -125,6 +127,7 @@ COMMANDS:
         [[ -z "$p_name" ]] && return 1
         local prov_dir="${OMNI:-$HOME/.omni}/providers"
         rm -rf "$prov_dir/$p_name"
+        return 0
     }
 
     __omni__.providers.sync() {
@@ -142,6 +145,7 @@ COMMANDS:
         else
             return 1
         fi
+        return 0
     }
 
     __omni__.providers.rm() {

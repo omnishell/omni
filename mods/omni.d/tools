@@ -399,6 +399,7 @@ COMMANDS:
         if [[ "$t_env" == "${ENV:-}" ]]; then
             __load tool "$t_name" --from "$tool_load_dir" -l
         fi
+        return 0
     }
 
     __omni__.tools.rm() {
@@ -452,6 +453,7 @@ COMMANDS:
             __prune "$t_name" 2>/dev/null || true
             unset -f "$t_name" "${t_name}.__compl__" "${t_name}.__help__" "${t_name}.__init__" "${t_name}.__aliases__" 2>/dev/null || true
         fi
+        return 0
     }
 
     __omni__.tools.call() {
