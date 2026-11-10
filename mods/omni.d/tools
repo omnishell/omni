@@ -31,6 +31,15 @@ COMMANDS:
             elif [[ -f "$p_dir" ]]; then
                 echo "$p_dir"
             fi
+        elif [[ -n "${PROVIDERS_REMOTE[$p]:-}" ]]; then
+            if [[ ! -f "$prov_dir/$p/init" ]]; then
+                __omni__.providers.install "$p" >/dev/null 2>&1 || true
+            fi
+            if [[ -f "$prov_dir/$p/init" ]]; then
+                echo "$prov_dir/$p/init"
+            elif [[ "$p" == "omni" && -f "$(dirname "$__OMNI")/provider/init" ]]; then
+                echo "$(dirname "$__OMNI")/provider/init"
+            fi
         fi
     }
 

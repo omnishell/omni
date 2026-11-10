@@ -5,12 +5,9 @@ __omni.providers__() {
     declare -gA PROVIDERS_REMOTE 2>/dev/null || true
     declare -gA ENV_PROVIDERS 2>/dev/null || true
 
+    unset PROVIDERS_LOCAL[omni] 2>/dev/null || true
     PROVIDERS_LOCAL[builtins]="${__OMNI}"
-    if [[ -d "$(dirname "$__OMNI")/provider" ]]; then
-        PROVIDERS_LOCAL[omni]="$(dirname "$__OMNI")/provider"
-    else
-        PROVIDERS_REMOTE[omni]="https://github.com/omnishell/provider.git"
-    fi
+    PROVIDERS_REMOTE[omni]="https://github.com/omnishell/provider.git"
 
     __omni__.providers.__help__() {
         echo """ABOUT:
@@ -42,18 +39,21 @@ COMMANDS:
         done
         if (( ! is_local && ! is_remote )); then is_local=1; is_remote=1; fi
 
-        _print_provider() {
-            local p="$1"
-            if (( is_local )) && [[ -n "${PROVIDERS_LOCAL[$p]:-}" ]]; then echo "local: $p"
-            elif (( is_remote )) && [[ -n "${PROVIDERS_REMOTE[$p]:-}" ]]; then echo "remote: $p"
-            fi
-        }
-
-        if (( is_local )); then
-            for p in "${!PROVIDERS_LOCAL[@]}"; do _print_provider "$p"; done
-        fi
         if (( is_remote )); then
-            for p in "${!PROVIDERS_REMOTE[@]}"; do _print_provider "$p"; done
+            local -a remotes=( "${!PROVIDERS_REMOTE[@]}" )
+            local -a sorted_remotes=()
+            [[ ${#remotes[@]} -gt 0 ]] && mapfile -t sorted_remotes < <(printf '%s\n' "${remotes[@]}" | sort)
+            for p in "${sorted_remotes[@]}"; do
+                [[ -n "${PROVIDERS_REMOTE[$p]:-}" ]] && echo "remote: $p"
+            done
+        fi
+        if (( is_local )); then
+            local -a locals=( "${!PROVIDERS_LOCAL[@]}" )
+            local -a sorted_locals=()
+            [[ ${#locals[@]} -gt 0 ]] && mapfile -t sorted_locals < <(printf '%s\n' "${locals[@]}" | sort)
+            for p in "${sorted_locals[@]}"; do
+                [[ -n "${PROVIDERS_LOCAL[$p]:-}" ]] && echo "local: $p"
+            done
         fi
     }
 
