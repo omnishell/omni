@@ -1,15 +1,25 @@
 PROVIDERS
 =========
 
-Providers are repositories containing tools and contexts.
+Providers are repositories containing an 'init' metadata file defining information
+about the provider (name, description, version) and its tools and contexts:
+<provider>/
+  |-- init
+
+METADATA IN INIT:
+* Name, description, and version
+* Tools: metadata specifying name, url (for external repos), or path (for local tools)
+* Contexts: metadata specifying name, url, or path
 
 TYPES:
-* Local: Directories on your machine (e.g., your 'omni' install dir).
-* Remote: Git repositories (e.g., GitHub).
+* Local: Directories on your machine containing an 'init' metadata file.
+* Remote: Git repositories containing an 'init' metadata file.
 
 COMMANDS:
 * ls: List active providers.
-* set: Register a new local or remote provider.
-* install/sync: Download or update tools from a provider.
+* set: Register a new local (-d/--dir) or remote (-u/--url) provider.
+* install/sync: Fetch or update metadata from a provider.
+* rm: Unregister a provider.
 
-Providers use the '@@' delimiter to map internal repository paths to local omni structures.
+When executing 'omni providers sync <provider>', only the provider's metadata is updated.
+Tools are cloned on demand when running 'omni tools use --provider <provider> <tool>'.

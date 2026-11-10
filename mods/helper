@@ -95,20 +95,36 @@ __helper__() {
     __update() {
         local array_name="$1" key="$2" value="$3" mode="$4"
         local rcfile="${OMNIRC:-$HOME/.omnirc}"
-        touch "$rcfile"
+        local -a lines=() out_lines=()
+        [[ -f "$rcfile" ]] && mapfile -t lines < "$rcfile"
+        local prefix="${array_name}[\"$key\"]="
+        local line found=0
         if [[ "$mode" == "rm" ]]; then
-            sed -i "/^${array_name}\[\"$key\"\]=/d" "$rcfile"
-            eval "unset ${array_name}[\"$key\"]"
+            for line in "${lines[@]}"; do
+                [[ "$line" == "$prefix"* ]] && continue
+                out_lines+=("$line")
+            done
+            unset "${array_name}[$key]" 2>/dev/null || true
         else
-            local new_line="${array_name}[\"$key\"]=\"$value\""
-            if grep -q "^${array_name}\[\"$key\"\]=" "$rcfile"; then
-                sed -i "s|^${array_name}\[\"$key\"\]=.*|$new_line|" "$rcfile"
-            else
-                echo "$new_line" >> "$rcfile"
-            fi
-            eval "$new_line"
+            local new_line="${prefix}\"$value\""
+            for line in "${lines[@]}"; do
+                if [[ "$line" == "$prefix"* ]]; then
+                    out_lines+=("$new_line")
+                    found=1
+                else
+                    out_lines+=("$line")
+                fi
+            done
+            (( found == 0 )) && out_lines+=("$new_line")
+            declare -gA "$array_name" 2>/dev/null || true
+            eval "${array_name}[\"\$key\"]=\"\$value\""
         fi
-    }
+        if (( ${#out_lines[@]} > 0 )); then
+            printf "%s\n" "${out_lines[@]}" > "$rcfile"
+        else
+            : > "$rcfile"
+        fi
+    }   
 
     __lazy() {
         local name="$1" path="$2"
@@ -371,9 +387,13 @@ __helper__() {
         fi
         local target="${targets[0]}" full_path="${path%/}"
         if [[ "$type" == "tool" ]]; then
-            if [[ -f "$full_path/$target/$target" ]]; then
+            if [[ -f "$full_path/$target/init" ]]; then
+                full_path="$full_path/$target/init"
+            elif [[ -f "$full_path/init" ]]; then
+                full_path="$full_path/init"
+            elif [[ -f "$full_path/$target/$target" ]]; then
                 full_path="$full_path/$target/$target"
-            else
+            elif [[ -f "$full_path/$target" ]]; then
                 full_path="$full_path/$target"
             fi
         else

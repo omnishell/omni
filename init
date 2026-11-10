@@ -18,8 +18,10 @@ __init__() {
     mkdir -p "$OMNI" && touch "$OMNIRC" && source "$OMNIRC"
     
     declare -gA PROVIDERS_LOCAL 2>/dev/null || true
-    if [[ -d "${OMNI}/tools" ]]; then
-        PROVIDERS_LOCAL[omni]="${OMNI}/tools@@tools@@contexts"
+    if [[ -d "$(dirname "$__OMNI")/provider" ]]; then
+        PROVIDERS_LOCAL[omni]="$(dirname "$__OMNI")/provider"
+    elif [[ -d "${OMNI}/provider" ]]; then
+        PROVIDERS_LOCAL[omni]="${OMNI}/provider"
     fi
     
     __load omni --from "$__OMNI_MODS/omni" --lazy && unset -f omni.__compl__
@@ -30,7 +32,7 @@ __init__() {
     local valid_tools=()
     for f in "${files[@]}"; do
         local bname="${f##*/}"
-        if [[ -f "$f/$bname" || -f "$f" ]]; then
+        if [[ -f "$f/init" || -f "$f/$bname" || -f "$f" ]]; then
             valid_tools+=("$bname")
         fi
     done

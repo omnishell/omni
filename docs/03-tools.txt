@@ -1,13 +1,21 @@
 TOOLS
 =====
 
-Tools are dynamic scripts or functions stored in a provider's /tools directory.
+Tools are modular Bash utilities structured with an 'init' entrypoint and optional 'mods/':
+<tool>/
+  |-- init
+  |-- mods/
+  `...
 
 LIFECYCLE:
-1. Register: A tool is associated with an environment.
+1. Register: A tool is associated with an environment via provider, local path, or remote URL.
 2. Lazy-Load: The tool is not sourced until called by the user.
 3. Aliasing: Tools can export aliases directly to the shell.
 
 MANAGEMENT:
-* omni tools ls: Show available tools in current provider.
-* omni tools use <tool>: Enable a tool for the current environment.
+* omni tools ls [-e <env>] [-p <provider>] [-a]: Show available tools.
+* omni tools use <tool> [--provider <provider>]: Enable a tool defined in a provider (cloning if remote).
+* omni tools use -p/--path <path>: Enable a local tool directly from path.
+* omni tools use -u/--url <url>: Enable a tool directly from a git repository URL.
+* omni tools rm <tool>: Remove a tool from the current environment.
+* omni tools call <tool> [args]: Execute a tool without persistent registration.

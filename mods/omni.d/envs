@@ -183,19 +183,55 @@ COMMANDS:
         local active_tools="${ENV_TOOLS[$_target_name]:-}"
         if [[ -n "$active_tools" ]]; then
             local prov_dir="${OMNI:-$HOME/.omni}/providers"
+            local tools_cache="${OMNI:-$HOME/.omni}/tools"
             local OIFS="$IFS"
             IFS=','
             local entries=($active_tools)
             IFS="$OIFS"
             for entry in "${entries[@]}"; do
                 if [[ -n "$entry" ]]; then
-                    local p_name="builtins"
-                    local t_name="$entry"
-                    if [[ "$entry" == *"@@"* ]]; then
-                        p_name="${entry%%@@*}"
-                        t_name="${entry#*@@}"
+                    if [[ "$entry" == "path@@"* ]]; then
+                        local t_path="${entry#path@@}"
+                        if [[ -d "$t_path" ]]; then
+                            local t_name="$(basename "$t_path")"
+                            __load tool "$t_name" --from "$t_path" --lazy
+                        elif [[ -f "$t_path" ]]; then
+                            local bname="$(basename "$t_path")"
+                            local dname="$(dirname "$t_path")"
+                            local t_name="$bname"
+                            [[ "$bname" == "init" ]] && t_name="$(basename "$dname")"
+                            __load file "$bname" --from "$dname" --lazy
+                            if [[ "$bname" != "$t_name" ]]; then
+                                eval "${t_name}() { ${bname} \"\$@\"; }"
+                            fi
+                        fi
+                    elif [[ "$entry" == "url@@"* ]]; then
+                        local rest="${entry#url@@}"
+                        local t_name="${rest##*@@}"
+                        if [[ -d "$tools_cache/$t_name" ]]; then
+                            __load tool "$t_name" --from "$tools_cache/$t_name" --lazy
+                        fi
+                    else
+                        local p_name="builtins"
+                        local t_name="$entry"
+                        if [[ "$entry" == *"@@"* ]]; then
+                            p_name="${entry%%@@*}"
+                            t_name="${entry#*@@}"
+                        fi
+                        if [[ "$p_name" == "builtins" ]]; then
+                            __load tool "$t_name" --from "$__OMNI_TOOLS" --lazy
+                        else
+                            if [[ -d "$prov_dir/$p_name/tools/$t_name" ]]; then
+                                __load tool "$t_name" --from "$prov_dir/$p_name/tools/$t_name" --lazy
+                            elif [[ -d "$tools_cache/$t_name" ]]; then
+                                __load tool "$t_name" --from "$tools_cache/$t_name" --lazy
+                            elif [[ -d "$(dirname "$__OMNI")/$t_name" ]]; then
+                                __load tool "$t_name" --from "$(dirname "$__OMNI")/$t_name" --lazy
+                            else
+                                __load tool "$t_name" --from "$prov_dir/$p_name/tools" --lazy
+                            fi
+                        fi
                     fi
-                    __load tool "$t_name" --from "$prov_dir/$p_name/tools" --lazy
                  fi
             done
         fi
