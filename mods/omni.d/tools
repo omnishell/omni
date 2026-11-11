@@ -15,6 +15,7 @@ COMMANDS:
     use     <tool> [-e|--env <env>] [--provider <provider>]
             -p|--path <path> [-e|--env <env>] [<tool>]
             -u|--url <url> [-e|--env <env>] [<tool>]
+    sync    <tool> [-p|--provider <provider>]
     rm      <tool> [-e|--env <env>] [-p|--provider <provider>]
     call    <tool> [-p|--provider <provider>] [args]""" >&2
     }
@@ -264,7 +265,6 @@ COMMANDS:
         local t_name="" t_env="$ENV" t_prov="" t_path="" t_url=""
         local prov_dir="${OMNI:-$HOME/.omni}/providers"
         local tools_cache="${OMNI:-$HOME/.omni}/tools"
-
         while [[ $# -gt 0 ]]; do
             case "$1" in
                 -e|--env) t_env="$2"; shift ;;
@@ -316,7 +316,6 @@ COMMANDS:
                 new_val="${new_val}${target},"
                 __update "ENV_TOOLS" "$t_env" "$new_val" "set"
             fi
-
             if [[ "$t_env" == "${ENV:-}" ]]; then
                 if [[ -d "$t_path" ]]; then
                     __load tool "$t_name" --from "$t_path" -l
@@ -338,7 +337,6 @@ COMMANDS:
                 t_name="$bname"
             fi
             [[ -z "$t_name" ]] && { echo "error: unable to determine tool name from '$t_url'" >&2; return 1; }
-
             local tool_dest="$tools_cache/$t_name"
             mkdir -p "$tools_cache"
             if [[ ! -d "$tool_dest" ]]; then
@@ -348,7 +346,6 @@ COMMANDS:
                     cp -r "$(dirname "$__OMNI")/$t_name" "$tool_dest"
                 fi
             fi
-
             if [[ ! -d "$tool_dest" || ( ! -f "$tool_dest/init" && ! -f "$tool_dest/$t_name" ) ]]; then
                 echo "error: failed to obtain valid tool '$t_name' from '$t_url'" >&2
                 return 1
@@ -362,7 +359,6 @@ COMMANDS:
                 new_val="${new_val}${target},"
                 __update "ENV_TOOLS" "$t_env" "$new_val" "set"
             fi
-
             if [[ "$t_env" == "${ENV:-}" ]]; then
                 __load tool "$t_name" --from "$tool_dest" -l
             fi
@@ -414,8 +410,119 @@ COMMANDS:
             new_val="${new_val}${target},"
             __update "ENV_TOOLS" "$t_env" "$new_val" "set"
         fi
-
         if [[ "$t_env" == "${ENV:-}" ]]; then
+            __load tool "$t_name" --from "$tool_load_dir" -l
+        fi
+        return 0
+    }
+
+    __omni__.tools.sync() {
+        local t_name="" t_prov=""
+        local prov_dir="${OMNI:-$HOME/.omni}/providers"
+        local tools_cache="${OMNI:-$HOME/.omni}/tools"
+
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -p|--provider|-P) t_prov="$2"; shift ;;
+                --provider=*) t_prov="${1#*=}" ;;
+                *) [[ -z "$t_name" ]] && t_name="$1" ;;
+            esac
+            shift
+        done
+
+        [[ -z "$t_name" ]] && { echo "error: <tool> is mandatory" >&2; return 1; }
+
+        if [[ -z "$t_prov" ]]; then
+            local active="${ENV_TOOLS[${ENV:-}]:-}"
+            if [[ ",${active}," == *",url@@"*"@@${t_name},"* && -d "$tools_cache/$t_name/.git" ]]; then
+                git -C "$tools_cache/$t_name" pull >/dev/null 2>&1 || true
+                __load tool "$t_name" --from "$tools_cache/$t_name" -l
+                return 0
+            elif [[ -n "${PROVIDERS_LOCAL[omni]:-}" || -n "${PROVIDERS_REMOTE[omni]:-}" ]]; then
+                t_prov="omni"
+            else
+                t_prov="builtins"
+            fi
+        fi
+
+        if [[ "$t_prov" == "builtins" ]]; then
+            if [[ -f "$__OMNI_TOOLS/$t_name" || -f "$__OMNI_TOOLS/$t_name/init" || -d "$__OMNI_TOOLS/$t_name" ]]; then
+                [[ -d "$__OMNI/.git" ]] && git -C "$__OMNI" pull >/dev/null 2>&1 || true
+                local active="${ENV_TOOLS[${ENV:-}]:-}"
+                if [[ ",${active}," == *",builtins@@${t_name},"* || ",${active}," == *",${t_name},"* ]]; then
+                    __load tool "$t_name" --from "$__OMNI_TOOLS" -l
+                fi
+                return 0
+            fi
+            echo "error: tool '$t_name' not found in builtins" >&2
+            return 1
+        fi
+
+        # Ensure provider is installed/synced so its init metadata and repo are up-to-date
+        if declare -f __omni__.providers.sync >/dev/null 2>&1; then
+            __omni__.providers.sync "$t_prov" >/dev/null 2>&1 || true
+        fi
+
+        local p_init="$(_get_provider_init "$t_prov")"
+        local T_URL="" T_PATH=""
+        if [[ -n "$p_init" && -f "$p_init" ]]; then
+            local meta
+            meta=$(
+                unset PROVIDER_TOOLS PROVIDER_TOOLS_URL PROVIDER_TOOLS_PATH PROVIDER_TOOLS_DESC
+                declare -A PROVIDER_TOOLS PROVIDER_TOOLS_URL PROVIDER_TOOLS_PATH PROVIDER_TOOLS_DESC
+                source "$p_init" 2>/dev/null || true
+                local u="${PROVIDER_TOOLS_URL[$t_name]:-}"
+                local p="${PROVIDER_TOOLS_PATH[$t_name]:-}"
+                local pt="${PROVIDER_TOOLS[$t_name]:-}"
+                if [[ -z "$u" && "$pt" == *"url="* ]]; then
+                    u="${pt#*url=}"; u="${u%% *}"; u="${u%%,*}"
+                elif [[ -z "$u" && "$pt" == *"url:"* ]]; then
+                    u="${pt#*url:}"; u="${u%% *}"; u="${u%%,*}"
+                fi
+                if [[ -z "$p" && "$pt" == *"path="* ]]; then
+                    p="${pt#*path=}"; p="${p%% *}"; p="${p%%,*}"
+                elif [[ -z "$p" && "$pt" == *"path:"* ]]; then
+                    p="${pt#*path:}"; p="${p%% *}"; p="${p%%,*}"
+                fi
+                echo "T_URL='$u'"
+                echo "T_PATH='$p'"
+            )
+            eval "$meta"
+        fi
+
+        local tool_dest="$tools_cache/$t_name"
+        if [[ -n "$T_URL" ]]; then
+            mkdir -p "$tools_cache"
+            if [[ -d "$tool_dest/.git" ]]; then
+                git -C "$tool_dest" pull >/dev/null 2>&1 || true
+            else
+                rm -rf "$tool_dest"
+                GIT_TERMINAL_PROMPT=0 git clone --depth 1 "$T_URL" "$tool_dest" >/dev/null 2>&1 || true
+                if [[ ! -d "$tool_dest" && -d "$(dirname "$__OMNI")/$t_name" ]]; then
+                    cp -r "$(dirname "$__OMNI")/$t_name" "$tool_dest"
+                fi
+            fi
+            if [[ -d "$tool_dest" ]]; then
+                mkdir -p "$prov_dir/$t_prov/tools" 2>/dev/null || true
+                ln -sfn "$tool_dest" "$prov_dir/$t_prov/tools/$t_name"
+            fi
+        elif [[ -d "$tool_dest/.git" ]]; then
+            git -C "$tool_dest" pull >/dev/null 2>&1 || true
+        elif [[ -d "$prov_dir/$t_prov/tools/$t_name/.git" ]]; then
+            git -C "$prov_dir/$t_prov/tools/$t_name" pull >/dev/null 2>&1 || true
+        elif [[ -d "$tool_dest" && -d "$(dirname "$__OMNI")/$t_name" ]]; then
+            cp -r "$(dirname "$__OMNI")/$t_name"/* "$tool_dest/" 2>/dev/null || true
+        fi
+
+        local tool_load_dir="$(_resolve_provider_tool "$t_prov" "$t_name")"
+        if [[ -z "$tool_load_dir" || ! -e "$tool_load_dir" ]]; then
+            echo "error: tool '$t_name' not found in provider '$t_prov'" >&2
+            return 1
+        fi
+
+        # If the tool is currently active in the current environment, refresh its lazy loader
+        local active="${ENV_TOOLS[${ENV:-}]:-}"
+        if [[ ",${active}," == *",${t_prov}@@${t_name},"* || ",${active}," == *",${t_name},"* ]]; then
             __load tool "$t_name" --from "$tool_load_dir" -l
         fi
         return 0
@@ -444,7 +551,6 @@ COMMANDS:
         IFS=','
         local entries=($current)
         IFS="$OIFS"
-
         for entry in "${entries[@]}"; do
             [[ -z "$entry" ]] && continue
             local match=0
@@ -508,6 +614,7 @@ COMMANDS:
         case "$cmd" in
             ls)   __omni__.tools.ls "$@" ;;
             use)  __omni__.tools.use "$@" ;;
+            sync) __omni__.tools.sync "$@" ;;
             rm)   __omni__.tools.rm "$@" ;;
             call) __omni__.tools.call "$@" ;;
             *)    echo "omni tools: Unknown command '$cmd'" >&2; return 1 ;;
@@ -518,7 +625,7 @@ COMMANDS:
         local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}" base_cmd="${COMP_WORDS[1]:-}"
         
         if [[ "${COMP_CWORD}" == 1 ]]; then 
-            COMPREPLY=( $(compgen -W "ls use rm call --help -h" -- "$cur") )
+            COMPREPLY=( $(compgen -W "ls use sync rm call --help -h" -- "$cur") )
             return 0
         fi
         
@@ -605,7 +712,7 @@ COMMANDS:
             use)
                 if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-e --env -p --path -u --url --provider" -- "$cur") )
                 elif ! _is_flag_value; then COMPREPLY=( $(compgen -W "$(_get_provider_tools "$t_prov")" -- "$cur") ); fi ;;
-            call)
+            sync|call)
                 if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-p --provider" -- "$cur") )
                 elif ! _is_flag_value; then COMPREPLY=( $(compgen -W "$(_get_provider_tools "$t_prov")" -- "$cur") ); fi ;;
             rm)
