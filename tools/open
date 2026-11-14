@@ -1,17 +1,14 @@
 #! /bin/bash
-
 __open__() {
     __open__.__help__() {
         echo """ABOUT:
     omni custom file opener
-
 USAGE:
     open ls
     open set <kind> -c <cmd>
     open rm <kind>
     open <target>
     open -- <target>
-
 FLAGS:
   -h, --help    Show this help""" >&2
     }
@@ -19,7 +16,6 @@ FLAGS:
     open() {
         local cmd="$1"
         local is_explicit=0
-
         if [[ "$cmd" == "--" ]]; then
             is_explicit=1
             shift
@@ -44,6 +40,7 @@ FLAGS:
                 set)
                     shift
                     local kind="$1"
+                    [[ "$kind" != "*" && "$kind" != "/" ]] && kind="${kind#\*\.}" && kind="${kind#.}"
                     shift
                     local open_cmd="" t_env="$ENV"
                     
@@ -60,9 +57,16 @@ FLAGS:
                     [[ -z "$open_cmd" ]] && __log "--command is mandatory" -t error -l open && return 1
                     [[ -z "$t_env" ]] && __log "no env was set" -t error -l open && return 1
                     
-                    local current="${ENV_OPEN[$t_env]}"
-                    local new_val=$(echo ",${current}" | sed -E "s/,${kind//\*/\\*}:[^,]*/,/g" | sed "s/^,//")
-                    new_val="${new_val}${kind}:${open_cmd},"
+                    local current="${ENV_OPEN[$t_env]:-}"
+                    local new_val=""
+                    local IFS=','
+                    for entry in $current; do
+                        [[ -z "$entry" ]] && continue
+                        local k="${entry%%:*}"
+                        [[ "$k" != "*" && "$k" != "/" ]] && k="${k#\*\.}" && k="${k#.}"
+                        [[ "$k" != "$kind" ]] && new_val+="${entry},"
+                    done
+                    new_val+="${kind}:${open_cmd},"
                     
                     __update "ENV_OPEN" "$t_env" "$new_val" "set"
                     __log "Registered '$kind' -> '$open_cmd' in env '$t_env'." -t success -l open
@@ -71,6 +75,7 @@ FLAGS:
                 rm)
                     shift
                     local kind="$1"
+                    [[ "$kind" != "*" && "$kind" != "/" ]] && kind="${kind#\*\.}" && kind="${kind#.}"
                     shift
                     local t_env="$ENV"
                     
@@ -79,8 +84,15 @@ FLAGS:
                     [[ -z "$kind" ]] && __log "<kind> is mandatory" -t error -l open && return 1
                     [[ -z "$t_env" ]] && __log "no env was set" -t error -l open && return 1
                     
-                    local current="${ENV_OPEN[$t_env]}"
-                    local new_val=$(echo ",${current}" | sed -E "s/,${kind//\*/\\*}:[^,]*/,/g" | sed "s/^,//")
+                    local current="${ENV_OPEN[$t_env]:-}"
+                    local new_val=""
+                    local IFS=','
+                    for entry in $current; do
+                        [[ -z "$entry" ]] && continue
+                        local k="${entry%%:*}"
+                        [[ "$k" != "*" && "$k" != "/" ]] && k="${k#\*\.}" && k="${k#.}"
+                        [[ "$k" != "$kind" ]] && new_val+="${entry},"
+                    done
                     
                     __update "ENV_OPEN" "$t_env" "$new_val" "set"
                     __log "Removed '$kind' from env '$t_env'." -t success -l open
@@ -97,29 +109,44 @@ FLAGS:
         
         [[ -z "$t_env" ]] && __log "no env was set" -t error -l open && return 1
         
-        local current="${ENV_OPEN[$t_env]}"
+        local current="${ENV_OPEN[$t_env]:-}"
         local kind=""
         
         if [[ -d "$target" ]]; then
             kind="/"
         else
-            kind="${target##*.}"
-            [[ "$kind" == "$target" ]] && kind="*" 
+            local base="${target##*/}"
+            if [[ "$base" == .* && "${base#.}" != *.* ]]; then
+                kind="*"
+            elif [[ "$base" == *.* ]]; then
+                kind="${base##*.}"
+            else
+                kind="*"
+            fi
         fi
         
-        local extract=",${current}"
-        extract="${extract##*,${kind}:}"
-        local open_cmd="${extract%%,*}"
-        
-        if [[ -z "$open_cmd" || "$open_cmd" == ",${current}" ]]; then
-            extract=",${current}"
-            extract="${extract##*,\*:}"
-            open_cmd="${extract%%,*}"
-            
-            if [[ -z "$open_cmd" || "$open_cmd" == ",${current}" ]]; then
-                __log "found no registered open kind for '$target' in env '$t_env'." -t error -l open
-                return 1
+        local open_cmd=""
+        local default_cmd=""
+        local IFS=','
+        for entry in $current; do
+            [[ -z "$entry" ]] && continue
+            local k="${entry%%:*}"
+            local v="${entry#*:}"
+            [[ "$k" != "*" && "$k" != "/" ]] && k="${k#\*\.}" && k="${k#.}"
+            if [[ "$k" == "$kind" ]]; then
+                open_cmd="$v"
+            elif [[ "$k" == "*" ]]; then
+                default_cmd="$v"
             fi
+        done
+        
+        if [[ -z "$open_cmd" && "$kind" != "/" ]]; then
+            open_cmd="$default_cmd"
+        fi
+        
+        if [[ -z "$open_cmd" ]]; then
+            __log "found no registered open kind for '$target' in env '$t_env'." -t error -l open
+            return 1
         fi
         
         eval "$open_cmd \"\$target\" \"\$@\""
@@ -131,20 +158,17 @@ FLAGS:
         cur="${COMP_WORDS[COMP_CWORD]}"
         prev="${COMP_WORDS[COMP_CWORD-1]}"
         base_cmd="${COMP_WORDS[1]}"
-
         if [[ "${COMP_CWORD}" == 1 ]]; then
             COMPREPLY=( $(compgen -W "ls set rm --help --" -- "$cur") )
             compopt -o default 
             return 0
         fi
-
         if [[ "$prev" == "set" || "$prev" == "rm" ]]; then
             local current="${ENV_OPEN[$ENV]}"
             local keys=$(echo "$current" | grep -oE '[^,]+:' | tr -d ':')
             COMPREPLY=( $(compgen -W "* / $keys" -- "$cur") )
             return 0
         fi
-
         if [[ "$base_cmd" == "set" && "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "--command -c --env -e" -- "$cur") ); return 0; fi
         if [[ "$prev" == "--env" || "$prev" == "-e" ]]; then COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") ); return 0; fi
     }
