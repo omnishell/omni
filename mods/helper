@@ -128,6 +128,7 @@ __helper__() {
 
     __lazy() {
         local name="$1" path="$2"
+        unalias "$name" 2>/dev/null || true
         local core_stub="
             unset -f ${name} __${name}__.__compl__ __${name}__.__help__ 2>/dev/null || true
             source \"$path\"
@@ -137,20 +138,20 @@ __helper__() {
             __clean \"${name}\"
         "
         eval "
-        ${name}() {
+        function ${name}() {
             $core_stub
             ${name} \"\$@\"
         }
-        __${name}__.__compl__() {
+        function __${name}__.__compl__() {
             $core_stub
             __${name}__.__compl__ \"\$@\"
         }
-        __${name}__.__help__() {
+        function __${name}__.__help__() {
             $core_stub
             __${name}__.__help__ \"\$@\"
         }
         "
-    } 
+    }
 
     __init() {
         if declare -f "__${1}__.__init__" >/dev/null; then "__${1}__.__init__"; 
@@ -418,10 +419,14 @@ __helper__() {
                 [[ -n "$new_funcs" ]] && __lazy_funcs "$full_path" "$new_funcs"
             else source "$full_path"; fi
         else
-            source "$full_path"
-            if declare -f "__${target}__" > /dev/null; then "__${target}__"; __init "$target"; fi
-            if (( is_lazy )); then __lazy "$target" "$full_path"; fi
-            __clean "$target"
-        fi
+            if (( is_lazy )); then
+                __lazy "$target" "$full_path"
+                __compl "$target"
+            else
+                source "$full_path"
+                if declare -f "__${target}__" > /dev/null; then "__${target}__"; __init "$target"; fi
+                __clean "$target"
+            fi
+        fi 
     }
 }
