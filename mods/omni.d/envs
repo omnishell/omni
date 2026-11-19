@@ -35,6 +35,7 @@ COMMANDS:
                 }
             }
         ' "$rcfile" > "${rcfile}.tmp" && mv "${rcfile}.tmp" "$rcfile"
+        rm -f "${OMNI:-$HOME/.omni}/.init.cache" 2>/dev/null || true
     }
 
     __omni__.envs.init() {
@@ -131,6 +132,24 @@ COMMANDS:
                 { print }
             ' "$rcfile" > "${rcfile}.tmp" && mv "${rcfile}.tmp" "$rcfile"
         fi
+        rm -f "${OMNI:-$HOME/.omni}/.init.cache" 2>/dev/null || true
+    }
+
+    _omni_bind_lazy_builtins() {
+        local b_list="$1" b
+        local all_b="has clip cd back home ls lf ld la laf lad ln mf md rm mv cp"
+        [[ -z "$b_list" ]] && b_list="$all_b" || b_list="${b_list//,/ }"
+        for b in $b_list; do
+            alias "$b=__omni__.builtins.cmd.$b"
+            if ! declare -f "__omni__.builtins.cmd.$b" >/dev/null 2>&1; then
+                eval "function __omni__.builtins.cmd.$b() {
+                    source \"\$__OMNI_MODS/omni.d/builtins\" && __omni.builtins__ && unset -f __omni.builtins__
+                    __omni__.builtins.cmd.$b \"\$@\"
+                }"
+            fi
+        done
+        alias -- -="back"
+        alias -- --="home"
     }
 
     __omni__.envs.use() {
@@ -163,20 +182,16 @@ COMMANDS:
             export __ENV="$_target_name" __ENV_PATH="$ENV_PATH"
         fi
 
-        if ! declare -f __omni__.builtins.__init__ >/dev/null 2>&1; then
-            if [[ -f "$__OMNI_MODS/omni.d/builtins" ]]; then
-                source "$__OMNI_MODS/omni.d/builtins"
-                __omni.builtins__ 2>/dev/null || true
-                unset -f __omni.builtins__ 2>/dev/null || true
+        if declare -f __omni__.builtins.__init__ >/dev/null 2>&1; then
+            if [[ -z "$b_list" ]]; then
+                __omni__.builtins.__init__
+            else
+                for b in ${b_list//,/ }; do
+                    __omni__.builtins.use "$b" -e "$_target_name"
+                done
             fi
-        fi
-
-        if [[ -z "$b_list" ]]; then
-            if declare -f __omni__.builtins.__init__ >/dev/null 2>&1; then __omni__.builtins.__init__; fi
         else
-            for b in ${b_list//,/ }; do
-                if declare -f __omni__.builtins.use >/dev/null 2>&1; then __omni__.builtins.use "$b" -e "$_target_name"; fi
-            done
+            _omni_bind_lazy_builtins "$b_list"
         fi
 
         local active_tools="${ENV_TOOLS[$_target_name]:-}"

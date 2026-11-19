@@ -199,7 +199,20 @@ __compl__() {
         base_cmd="${COMP_WORDS[1]}"
 
         if [[ "${COMP_CWORD}" == 1 ]]; then COMPREPLY=( $(compgen -W "spec build set use" -- "$cur") ); return 0; fi
-        if [[ "$prev" == "use" || "$prev" == "spec" || "$prev" == "build" ]]; then COMPREPLY=( $(compgen -W "${TOOLS_LIST//,/ }" -- "$cur") ); return 0; fi
+        if [[ "$prev" == "use" || "$prev" == "spec" || "$prev" == "build" ]]; then
+            local tools_words="${TOOLS_LIST//,/ }"
+            if [[ -z "$tools_words" && -d "$__OMNI_TOOLS" ]]; then
+                local f bname
+                shopt -s nullglob
+                for f in "$__OMNI_TOOLS"/*; do
+                    bname="${f##*/}"
+                    [[ -f "$f/init" || -f "$f/$bname" || -f "$f" ]] && tools_words+="$bname "
+                done
+                shopt -u nullglob
+            fi
+            COMPREPLY=( $(compgen -W "$tools_words" -- "$cur") )
+            return 0
+        fi
         if [[ "$prev" == "--env" ]]; then COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") ); return 0; fi
         if [[ "$base_cmd" == "use" && "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "--env" -- "$cur") ); return 0; fi
     }

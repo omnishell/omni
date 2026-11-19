@@ -2,6 +2,7 @@
 
 __helper__() {
     declare -g -a __MODULE_CLEANUPS=()
+    declare -g -a __OMNI_LAZY_REGISTRY=()
 
     __log() {
         local msg="" log_type="log" logger=""
@@ -121,36 +122,48 @@ __helper__() {
                 }
             }
         ' "$rcfile" > "${rcfile}.tmp" && mv "${rcfile}.tmp" "$rcfile"
+        rm -f "${OMNI:-$HOME/.omni}/.init.cache" 2>/dev/null || true
     }
 
     __lazy() {
-        local name="$1" path="$2"
+        local name="$1" path="$2" is_ctx="${3:-0}"
         unalias "$name" 2>/dev/null || true
+        __OMNI_LAZY_REGISTRY+=("$name")
 
-        local alias_defs
-        alias_defs=$(awk -v fn="__${name}__.__aliases__" '
-            $0 ~ "^[[:space:]]*(function[[:space:]]+)?" fn "[[:space:]]*\\(\\)[[:space:]]*\\{" {
-                in_block = 1
-                next
-            }
-            in_block {
-                if ($0 ~ /^[[:space:]]*\}[[:space:]]*$/) exit
-                print
-            }
-        ' "$path")
-
-        if [[ -n "$alias_defs" ]]; then
-            eval "$alias_defs"
-            local a_names
-            a_names=$(awk '
-                match($0, /^[[:space:]]*alias[[:space:]]+(--[[:space:]]+)?([^=]+)=/, m) {
-                    gsub(/["\x27]/, "", m[2])
-                    printf "%s ", m[2]
-                }
-            ' <<< "$alias_defs")
-            if [[ -n "$a_names" ]]; then
-                eval "complete -o default -o bashdefault -F __${name}__.__compl__ $a_names"
+        local -a _lines=()
+        mapfile -t _lines < "$path"
+        local _line _in_alias=0 _alias_defs="" _a_names="" _tmp
+        for _line in "${_lines[@]}"; do
+            if (( ! _in_alias )); then
+                [[ "$_line" == *"__${name}__.__aliases__()"*"{"* ]] && _in_alias=1
+            else
+                [[ "$_line" =~ ^[[:space:]]*\}[[:space:]]*$ ]] && break
+                _alias_defs+="$_line"$'\n'
+                if [[ "$_line" == *alias\ * ]]; then
+                    _tmp="${_line#*alias }"
+                    _tmp="${_tmp#-- }"
+                    _tmp="${_tmp%%=*}"
+                    _tmp="${_tmp//[\"\' ]/}"
+                    [[ -n "$_tmp" ]] && _a_names+="$_tmp "
+                fi
             fi
+        done
+
+        if [[ -n "$_alias_defs" ]]; then
+            eval "$_alias_defs"
+            [[ -n "$_a_names" ]] && eval "complete -o default -o bashdefault -F __${name}__.__compl__ $_a_names"
+        fi
+
+        local ctx_sync=""
+        if (( is_ctx )); then
+            ctx_sync="
+                local _f _attrs=\"\"
+                for _f in \$(compgen -A function \"${name}.\"); do
+                    local _an=\"\${_f#${name}.}\"
+                    [[ \"\$_an\" != __*__ ]] && _attrs+=\"\${_an},\"
+                done
+                CONTEXTS[\"${name}\"]=\"\${_attrs%,}\"
+            "
         fi
 
         local core_stub="
@@ -159,6 +172,7 @@ __helper__() {
             __${name}__ 2>/dev/null || true
             __init \"${name}\"
             __aliases \"${name}\"
+            ${ctx_sync}
             __clean \"${name}\"
         "
         eval "
@@ -322,7 +336,7 @@ __helper__() {
                 local is_dec=0 is_pure=0
                 [[ "$flag" == "-d" || "$flag" == "--decorated" ]] && is_dec=1
                 [[ "$flag" == "-p" || "$flag" == "--pure" ]] && is_pure=1
-                if [[ -v "CONTEXTS[$name]" ]]; then
+                if [[ -v "CONTEXTS[$name]" && -n "${CONTEXTS[$name]}" ]]; then
                     local attrs="${CONTEXTS[$name]}"
                     if (( is_dec )); then [[ -n "$attrs" ]] && return 0 || return 1; fi
                     if (( is_pure )); then [[ -z "$attrs" ]] && return 0 || return 1; fi
@@ -451,13 +465,17 @@ __helper__() {
         fi
         [[ ! -f "$full_path" ]] && return 1
         if [[ "$type" == "context" ]]; then
-            source "$full_path"
-            if declare -f "__${target}__" > /dev/null; then "__${target}__"; __init "$target"; fi
-            local funcs=$(compgen -A function "${target}."); local attrs=""
-            for f in $funcs; do local attr_name="${f#$target.}"; [[ "$attr_name" != __*__ ]] && attrs+="${attr_name},"; done
-            attrs="${attrs%,}"; CONTEXTS["$target"]="$attrs"
-            if (( is_lazy )); then __lazy "$target" "$full_path"; fi
-            __clean "$target"
+            if (( is_lazy )); then
+                __lazy "$target" "$full_path" 1
+                __compl "$target"
+            else
+                source "$full_path"
+                if declare -f "__${target}__" > /dev/null; then "__${target}__"; __init "$target"; fi
+                local funcs=$(compgen -A function "${target}."); local attrs=""
+                for f in $funcs; do local attr_name="${f#$target.}"; [[ "$attr_name" != __*__ ]] && attrs+="${attr_name},"; done
+                attrs="${attrs%,}"; CONTEXTS["$target"]="$attrs"
+                __clean "$target"
+            fi
         elif [[ "$type" == "file" ]]; then
             if (( is_lazy )); then
                 local before_arr=( $(compgen -A function) ); local -A before_funcs=()

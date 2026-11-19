@@ -12,16 +12,23 @@ __init__() {
     export __OMNI_CONF="$__OMNI/conf"
     export __OMNI_TOOLS="$__OMNI/tools"
     export __OMNI_CONTEXTS="$__OMNI/contexts"
-    [[ -d "$__OMNI_TOOLS" ]] || mkdir -p "$__OMNI_TOOLS" 2>/dev/null || true
 
     export OMNI="${OMNI:-$HOME/.omni}"
     export OMNIRC="${OMNIRC:-$OMNI/omnirc}"
+    local _cache="$OMNI/.init.cache"
+
+    if [[ -f "$_cache" && -f "$OMNIRC" && "$_cache" -nt "$OMNIRC" && "$_cache" -nt "$__OMNI_MODS/helper" && "$_cache" -nt "$__OMNI/init" ]]; then
+        source "$_cache"
+        return 0
+    fi
+
+    [[ -d "$__OMNI_TOOLS" ]] || mkdir -p "$__OMNI_TOOLS" 2>/dev/null || true
+    [[ -d "$OMNI" ]] || mkdir -p "$OMNI"
+    [[ -f "$OMNIRC" ]] || : > "$OMNIRC"
 
     source "$__OMNI_MODS/helper" && __helper__
     __declare --dict ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS ENV_TRASH
 
-    [[ -d "$OMNI" ]] || mkdir -p "$OMNI"
-    [[ -f "$OMNIRC" ]] || : > "$OMNIRC"
     source "$OMNIRC"
 
     declare -gA PROVIDERS_LOCAL 2>/dev/null || true
@@ -32,25 +39,53 @@ __init__() {
 
     __load omni --from "$__OMNI_MODS/omni" --lazy && unset -f omni.__compl__
 
-    local files f bname
-    shopt -s nullglob
-    files=("$__OMNI_TOOLS"/*)
-    shopt -u nullglob
-    local valid_tools=()
-    for f in "${files[@]}"; do
-        bname="${f##*/}"
-        if [[ -f "$f/init" || -f "$f/$bname" || -f "$f" ]]; then
-            valid_tools+=("$bname")
-        fi
-    done
-    local OIFS="$IFS"
-    IFS=,
-    export TOOLS_LIST="${valid_tools[*]}"
-    IFS="$OIFS"
     export ENV="${__ENV}"
     if [[ -n "$ENV" ]]; then
         omni envs use "$ENV" --global
     fi
+
+    __omni_compile_init_cache "$_cache"
 }
+
+__omni_compile_init_cache() {
+    local _cache="$1"
+    local _tmp="${_cache}.tmp.$$"
+    {
+        printf '# Auto-generated omni fast-init cache\n'
+        printf 'source %q && __helper__\n' "$__OMNI_MODS/helper"
+        printf '__declare --dict ENVS ENV_VARS ENV_LAZY ENV_OPEN ENV_COMMA PROVIDERS ENV_PROVIDERS TOOLS ENV_TOOLS IMPORTS CONTEXTS ENV_TRASH ENV_CONTEXTS ENV_BUILTINS ENV_SSH_NS ENV_SSH_DEF\n'
+        printf 'source %q\n' "$OMNIRC"
+        printf 'declare -gA PROVIDERS_LOCAL PROVIDERS_REMOTE\n'
+        printf 'unset PROVIDERS_LOCAL[omni] 2>/dev/null || true\n'
+        printf 'PROVIDERS_LOCAL[builtins]=%q\n' "$__OMNI"
+        printf 'PROVIDERS_REMOTE[omni]=%q\n' "https://github.com/omnishell/provider.git"
+        printf '__load omni --from %q --lazy && unset -f omni.__compl__\n' "$__OMNI_MODS/omni"
+        if [[ -n "${ENV:-}" ]]; then
+            printf 'export ENV=%q ENV_PATH=%q BIN=%q TMP=%q SEC=%q MNT=%q\n' \
+                "$ENV" "${ENV_PATH:-}" "${BIN:-}" "${TMP:-}" "${SEC:-}" "${MNT:-}"
+            [[ -n "${BIN:-}" ]] && printf '[[ ":$PATH:" != *":%s:"* ]] && export PATH="$PATH:%s"\n' "$BIN" "$BIN"
+
+            local _b _bfns=()
+            for _b in has clip cd back home ls lf ld la laf lad ln mf md rm mv cp; do
+                declare -f "__omni__.builtins.cmd.$_b" >/dev/null 2>&1 && _bfns+=("__omni__.builtins.cmd.$_b")
+            done
+            (( ${#_bfns[@]} > 0 )) && declare -f "${_bfns[@]}" | sed 's/^\([^[:space:]]*\) ()/function \1 ()/'
+
+            local _fn
+            for _fn in "${__OMNI_LAZY_REGISTRY[@]}"; do
+                declare -f "$_fn" "__${_fn}__.__compl__" "__${_fn}__.__help__" 2>/dev/null | sed 's/^\([^[:space:]]*\) ()/function \1 ()/'
+            done
+            local _a
+            while IFS= read -r _a; do
+                [[ -n "$_a" ]] && printf '%s\n' "$_a"
+            done < <(alias)
+            complete -p 2>/dev/null | awk '$NF != "omni"'
+            if [[ -n "${ENV_PATH:-}" && -f "$ENV_PATH/init" ]]; then
+                printf 'source %q\n' "$ENV_PATH/init"
+            fi
+        fi
+    } > "$_tmp" 2>/dev/null && mv "$_tmp" "$_cache" || rm -f "$_tmp"
+}
+
 __init__
-unset -f __init__
+unset -f __init__ __omni_compile_init_cache
