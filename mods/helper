@@ -11,7 +11,7 @@ __helper__() {
                 --type=*)    log_type="${1#*=}" ;;
                 -l|--logger) logger="$2"; shift ;;
                 --logger=*)  logger="${1#*=}" ;;
-                *) 
+                *)
                     if [[ -z "$msg" ]]; then msg="$1"
                     else msg="${msg} $1"; fi
                     ;;
@@ -45,7 +45,7 @@ __helper__() {
         local context="$1"
         [[ -z "$context" ]] && return 0
         unset -f "__${context}__" 2>/dev/null || true
-        
+
         local funcs=( $(compgen -A function "${context}.") $(compgen -A function "__${context}__.") )
         local f
         for f in "${funcs[@]}"; do
@@ -55,7 +55,7 @@ __helper__() {
                 fi
             fi
         done
-        
+
         eval "local vars=( \${!__${context}@} )"
         if [[ ${#vars[@]} -gt 0 ]]; then
             unset -v "${vars[@]}" 2>/dev/null || true
@@ -95,40 +95,64 @@ __helper__() {
     __update() {
         local array_name="$1" key="$2" value="$3" mode="$4"
         local rcfile="${OMNIRC:-$HOME/.omnirc}"
-        local -a lines=() out_lines=()
-        [[ -f "$rcfile" ]] && mapfile -t lines < "$rcfile"
-        local prefix="${array_name}[\"$key\"]="
-        local line found=0
+        local prefix="${array_name}[\"${key}\"]="
+
         if [[ "$mode" == "rm" ]]; then
-            for line in "${lines[@]}"; do
-                [[ "$line" == "$prefix"* ]] && continue
-                out_lines+=("$line")
-            done
             unset "${array_name}[$key]" 2>/dev/null || true
         else
-            local new_line="${prefix}\"$value\""
-            for line in "${lines[@]}"; do
-                if [[ "$line" == "$prefix"* ]]; then
-                    out_lines+=("$new_line")
-                    found=1
-                else
-                    out_lines+=("$line")
-                fi
-            done
-            (( found == 0 )) && out_lines+=("$new_line")
             declare -gA "$array_name" 2>/dev/null || true
             eval "${array_name}[\"\$key\"]=\"\$value\""
         fi
-        if (( ${#out_lines[@]} > 0 )); then
-            printf "%s\n" "${out_lines[@]}" > "$rcfile"
-        else
-            : > "$rcfile"
-        fi
-    }   
+
+        [[ -f "$rcfile" ]] || : > "$rcfile"
+        awk -v pfx="$prefix" -v val="$value" -v mode="$mode" '
+            BEGIN { found = 0 }
+            index($0, pfx) == 1 {
+                if (mode != "rm" && !found) {
+                    print pfx "\"" val "\""
+                    found = 1
+                }
+                next
+            }
+            { print }
+            END {
+                if (mode != "rm" && !found) {
+                    print pfx "\"" val "\""
+                }
+            }
+        ' "$rcfile" > "${rcfile}.tmp" && mv "${rcfile}.tmp" "$rcfile"
+    }
 
     __lazy() {
         local name="$1" path="$2"
         unalias "$name" 2>/dev/null || true
+
+        local alias_defs
+        alias_defs=$(awk -v fn="__${name}__.__aliases__" '
+            $0 ~ "^[[:space:]]*(function[[:space:]]+)?" fn "[[:space:]]*\\(\\)[[:space:]]*\\{" {
+                in_block = 1
+                next
+            }
+            in_block {
+                if ($0 ~ /^[[:space:]]*\}[[:space:]]*$/) exit
+                print
+            }
+        ' "$path")
+
+        if [[ -n "$alias_defs" ]]; then
+            eval "$alias_defs"
+            local a_names
+            a_names=$(awk '
+                match($0, /^[[:space:]]*alias[[:space:]]+(--[[:space:]]+)?([^=]+)=/, m) {
+                    gsub(/["\x27]/, "", m[2])
+                    printf "%s ", m[2]
+                }
+            ' <<< "$alias_defs")
+            if [[ -n "$a_names" ]]; then
+                eval "complete -o default -o bashdefault -F __${name}__.__compl__ $a_names"
+            fi
+        fi
+
         local core_stub="
             unset -f ${name} __${name}__.__compl__ __${name}__.__help__ 2>/dev/null || true
             source \"$path\"
@@ -154,7 +178,7 @@ __helper__() {
     }
 
     __init() {
-        if declare -f "__${1}__.__init__" >/dev/null; then "__${1}__.__init__"; 
+        if declare -f "__${1}__.__init__" >/dev/null; then "__${1}__.__init__";
         elif declare -f "${1}.__init__" >/dev/null; then "${1}.__init__"; fi
     }
 
@@ -183,26 +207,26 @@ __helper__() {
 
     __export() {
         local name="${3:-$1}"
-        eval "${name}() { $1 \"\$@\"; }"
-    }   
+        eval "function ${name}() { $1 \"\$@\"; }"
+    }
 
     __body() {
         local name="$1"; shift
         local cases="" opt func func_body help_body from_file
         local args=("$@")
         local i=0
-        
+
         while [[ $i -lt ${#args[@]} ]]; do
             local map="${args[$i]}"
             opt="${map%%=*}"
             func="${map#*=}"
             from_file=""
-            
+
             if [[ $((i + 1)) -lt ${#args[@]} && "${args[$((i+1))]}" == "--from" ]]; then
                 from_file="${args[$((i+2))]}"
                 ((i+=2))
             fi
-            
+
             cases+="$opt)"$'\n'
             if [[ -n "$from_file" ]]; then
                 cases+="  if ! declare -f \"$func\" >/dev/null 2>&1; then"$'\n'
@@ -247,7 +271,7 @@ __helper__() {
             cases+=";;"$'\n'
             ((i++))
         done
-        
+
         local body_str=""
         body_str+="local target cmd val _target_name rest t_env is_all map opt func func_body help_body main_help set_global b_list env_path bin tmp sec mnt str BIN_VAL TMP_VAL SEC_VAL MNT_VAL active_scripts active_tools script t_name"$'\n'
         body_str+="target=\"\$FUNCNAME\""$'\n'
@@ -278,7 +302,7 @@ __helper__() {
 
     __build() {
         local name="$1"
-        eval "${name}() { 
+        eval "function ${name}() {
             $(__body "$@")
         }"
     }
@@ -298,7 +322,7 @@ __helper__() {
                 local is_dec=0 is_pure=0
                 [[ "$flag" == "-d" || "$flag" == "--decorated" ]] && is_dec=1
                 [[ "$flag" == "-p" || "$flag" == "--pure" ]] && is_pure=1
-                if [[ -v "CONTEXTS[$name]" && -n "${CONTEXTS[$name]}" ]]; then
+                if [[ -v "CONTEXTS[$name]" ]]; then
                     local attrs="${CONTEXTS[$name]}"
                     if (( is_dec )); then [[ -n "$attrs" ]] && return 0 || return 1; fi
                     if (( is_pure )); then [[ -z "$attrs" ]] && return 0 || return 1; fi
@@ -312,17 +336,30 @@ __helper__() {
                 elif [[ -f "$__OMNI_TOOLS/$name" ]]; then path="$__OMNI_TOOLS/$name"; fi
                 if [[ -n "$path" ]]; then
                     local basename="${name##*/}"
-                    local has_init=0 has_attrs=0
-                    grep -qE "^ *${basename}\.__init__" "$path" && has_init=1
-                    grep -E "^[[:space:]]*(function[[:space:]]+)?${basename}\." "$path" | grep -qvE "\.__[a-zA-Z0-9_]+__" && has_attrs=1
-                    if [[ $has_init == 0 || $has_attrs == 0 ]]; then
-                         local sub_funcs=$( ( source "$path" 2>/dev/null; declare -F ) )
-                         echo "$sub_funcs" | grep -q "declare -f ${basename}\.__init__" && has_init=1
-                         echo "$sub_funcs" | grep -E "declare -f ${basename}\." | grep -qvE "\.__[a-zA-Z0-9_]+__" && has_attrs=1
+                    local res
+                    res=$(awk -v ns="$basename" '
+                        BEGIN { has_init = 0; has_attrs = 0 }
+                        match($0, "^[[:space:]]*(function[[:space:]]+)?" ns "\\.[a-zA-Z0-9_]+[[:space:]]*\\(\\)") {
+                            fn = substr($0, RSTART, RLENGTH)
+                            sub("^[[:space:]]*(function[[:space:]]+)?" ns "\\.", "", fn)
+                            sub("[[:space:]]*\\($", "", fn)
+                            if (fn == "__init__") has_init = 1
+                            else if (fn !~ /^__[a-zA-Z0-9_]+__$/) has_attrs = 1
+                        }
+                        END { print has_init ":" has_attrs }
+                    ' "$path")
+                    local has_init="${res%%:*}" has_attrs="${res##*:}"
+                    if [[ "$has_init" == "0" ]]; then
+                        local sub_funcs
+                        sub_funcs=$( ( source "$path" 2>/dev/null; declare -F ) )
+                        [[ "$sub_funcs" == *"declare -f ${basename}.__init__"* ]] && has_init=1
+                        if awk -v ns="$basename" '$3 ~ "^" ns "\\." && $3 !~ "\\.__[a-zA-Z0-9_]+__$" { found=1; exit } END { exit !found }' <<< "$sub_funcs"; then
+                            has_attrs=1
+                        fi
                     fi
-                    [[ $has_init == 0 ]] && return 1
-                    if (( is_dec )); then [[ $has_attrs == 1 ]] && return 0 || return 1; fi
-                    if (( is_pure )); then [[ $has_attrs == 0 ]] && return 0 || return 1; fi
+                    [[ "$has_init" == "0" ]] && return 1
+                    if (( is_dec )); then [[ "$has_attrs" == "1" ]] && return 0 || return 1; fi
+                    if (( is_pure )); then [[ "$has_attrs" == "0" ]] && return 0 || return 1; fi
                     return 0
                 fi
                 return 1 ;;
@@ -342,7 +379,7 @@ __helper__() {
             builtins)  echo "${ENV_BUILTINS[$t_env]}"  ;;
             *)         return 1 ;;
         esac
-    } 
+    }
 
     __attrs() {
         local name="$1"
@@ -356,14 +393,26 @@ __helper__() {
         elif [[ -f "$__OMNI_TOOLS/$name/$name" ]]; then path="$__OMNI_TOOLS/$name/$name"
         elif [[ -f "$__OMNI_TOOLS/$name" ]]; then path="$__OMNI_TOOLS/$name"; fi
         if [[ -n "$path" ]]; then
-            local funcs=$( ( source "$path" 2>/dev/null; compgen -A function "${name}." ) | sed -E "s/^${name}\.//" | grep -vE '^__[a-zA-Z0-9_]+__$' | sort -u | tr '\n' ' ' | sed 's/ *$//' )
+            local funcs
+            funcs=$(awk -v ns="$name" '
+                match($0, "^[[:space:]]*(function[[:space:]]+)?" ns "\\.[a-zA-Z0-9_]+[[:space:]]*\\(\\)") {
+                    fn = substr($0, RSTART, RLENGTH)
+                    sub("^[[:space:]]*(function[[:space:]]+)?" ns "\\.", "", fn)
+                    sub("[[:space:]]*\\($", "", fn)
+                    if (fn !~ /^__[a-zA-Z0-9_]+__$/) attrs[fn] = 1
+                }
+                END {
+                    for (k in attrs) print k
+                }
+            ' "$path" | sort -u | tr '\n' ' ')
+            funcs="${funcs% }"
             [[ -n "$funcs" ]] && echo "$funcs" && return 0
         fi
         return 1
     }
 
     __get() { [[ -n "$2" ]] && echo "${1}.${2}" && return 0 || return 1; }
-    
+
     __load() {
         local type="$1"; shift
         local targets=() path="" is_lazy=0
@@ -427,6 +476,6 @@ __helper__() {
                 if declare -f "__${target}__" > /dev/null; then "__${target}__"; __init "$target"; fi
                 __clean "$target"
             fi
-        fi 
+        fi
     }
 }

@@ -11,17 +11,22 @@ USAGE:
   comma rm <comma> [-e/--env <env>]
   comma -- <comma> [-e/--env <env>]
 
-FLAGS:
-    ...
-
 ALIASES:
   ,   -> comma --
   ,a  -> comma add
   ,d  -> comma rm""" >&2
     }
 
+    _comma_print_entries() {
+        local data="$1"
+        [[ -z "$data" ]] && return 0
+        local IFS=',' entry
+        for entry in $data; do
+            [[ -n "$entry" ]] && printf '%s\n' "${entry%%:*}"
+        done
+    }
 
-    comma() {
+    function comma() {
         local cmd="$1"
         local is_explicit=0
 
@@ -30,13 +35,13 @@ ALIASES:
             shift
             cmd="$1"
         fi
-        
+
         if (( ! is_explicit )); then
             if [[ "$cmd" == "--help" || "$cmd" == "-h" ]]; then
                 __comma__.__help__
                 return 0
             fi
-            
+
             case "$cmd" in
                 ls)
                     shift
@@ -45,44 +50,28 @@ ALIASES:
                         case "$1" in
                             -a|--all) is_all=1 ;;
                             -e|--env) t_env="$2"; shift ;;
-                            --env=*) t_env="${1#*=}" ;;
+                            --env=*)  t_env="${1#*=}" ;;
                         esac
                         shift
                     done
-                    
-                    __commas() {
-                        local env_name="$1"
-                        local data="$2"
-                        [[ -z "$data" ]] && return
-                        
-                        local IFS=','
-                        for entry in $data; do
-                            if [[ -n "$entry" ]]; then
-                                local a="${entry%%:*}"
-                                local rest="${entry#*:}"
-                                local p="${rest%%:*}"
-                                local c="${rest#*:}"
-                                echo "$a"
-                            fi
-                        done
-                    }
 
                     if (( is_all )); then
+                        local e
                         for e in "${!ENV_COMMA[@]}"; do
-                            __commas "$e" "${ENV_COMMA[$e]:-}"
+                            _comma_print_entries "${ENV_COMMA[$e]:-}"
                         done
                     else
                         [[ -z "$t_env" ]] && __log "no env was set" -t error -l comma && return 1
-                        __commas "$t_env" "${ENV_COMMA[$t_env]:-}"
+                        _comma_print_entries "${ENV_COMMA[$t_env]:-}"
                     fi
                     return 0
-                    ;; 
+                    ;;
                 set|add)
                     shift
                     local alias_name="$1"
                     shift
                     local target_path="" target_cmd="" t_env="$ENV"
-                    
+
                     if [[ $# -gt 0 && "$1" != -* ]]; then
                         target_path="$1"
                         shift
@@ -90,50 +79,50 @@ ALIASES:
 
                     while [[ $# -gt 0 ]]; do
                         case "$1" in
-                            --path=*|-p=*) target_path="${1#*=}" ;;
-                            --path|-p) target_path="$2"; shift ;;
+                            --path=*|-p=*)            target_path="${1#*=}" ;;
+                            --path|-p)                target_path="$2"; shift ;;
                             --command=*|--cmd=*|-c=*) target_cmd="${1#*=}" ;;
-                            --command|--cmd|-c) target_cmd="$2"; shift ;;
-                            --env=*|-e=*) t_env="${1#*=}" ;;
-                            --env|-e) t_env="$2"; shift ;;
+                            --command|--cmd|-c)       target_cmd="$2"; shift ;;
+                            --env=*|-e=*)             t_env="${1#*=}" ;;
+                            --env|-e)                 t_env="$2"; shift ;;
                         esac
                         shift
                     done
-                    
+
                     [[ -z "$alias_name" ]] && __log "<comma> alias is mandatory" -t error -l comma && return 1
                     [[ -z "$target_path" ]] && __log "--path is mandatory" -t error -l comma && return 1
-                    
+
                     if [[ "$target_path" != /* ]]; then
                         if [[ -d "$target_path" ]]; then
                             target_path="$(cd "$target_path" 2>/dev/null && pwd)"
                         else
-                            local _dir="$(dirname "$target_path")"
-                            local _base="$(basename "$target_path")"
+                            local _dir="${target_path%/*}"
+                            local _base="${target_path##*/}"
+                            [[ "$_dir" == "$target_path" ]] && _dir="."
                             _dir="$(cd "$_dir" 2>/dev/null && pwd)"
                             [[ -n "$_dir" ]] && target_path="${_dir}/${_base}"
                         fi
                     fi
-                    
+
                     [[ -z "$t_env" ]] && __log "no env was set" -t error -l comma && return 1
-                    
+
                     if [[ -z "$target_cmd" ]]; then
                         local env_scripts="${ENV_TOOLS[$t_env]:-}"
-                        if [[ ",${env_scripts}," == *",dot,"* ]]; then
+                        if [[ ",${env_scripts}," == *",dot,"* || ",${env_scripts}," == *"@@dot,"* ]]; then
                             target_cmd="dot"
                         else
                             target_cmd="cd"
                         fi
                     fi
-                    
+
                     local current="${ENV_COMMA[$t_env]:-}"
-                    local new_val=","
+                    local new_val="" entry
                     local IFS=','
                     for entry in $current; do
-                        [[ -n "$entry" && "$entry" != "${alias_name}:"* ]] && new_val="${new_val}${entry},"
+                        [[ -n "$entry" && "$entry" != "${alias_name}:"* ]] && new_val+="${entry},"
                     done
-                    new_val="${new_val#,}"
-                    new_val="${new_val}${alias_name}:${target_path}:${target_cmd},"
-                    
+                    new_val+="${alias_name}:${target_path}:${target_cmd},"
+
                     __update "ENV_COMMA" "$t_env" "$new_val" "set"
                     __log "Registered '$alias_name' -> '$target_cmd $target_path' in env '$t_env'." -t success -l comma
                     return 0
@@ -143,20 +132,25 @@ ALIASES:
                     local alias_name="$1"
                     shift
                     local t_env="$ENV"
-                    
-                    while [[ $# -gt 0 ]]; do case "$1" in --env|-e) t_env="$2"; shift ;; esac; shift; done
-                    
+
+                    while [[ $# -gt 0 ]]; do
+                        case "$1" in
+                            --env|-e) t_env="$2"; shift ;;
+                            --env=*)  t_env="${1#*=}" ;;
+                        esac
+                        shift
+                    done
+
                     [[ -z "$alias_name" ]] && __log "<comma> alias is mandatory" -t error -l comma && return 1
                     [[ -z "$t_env" ]] && __log "no env was set" -t error -l comma && return 1
-                    
+
                     local current="${ENV_COMMA[$t_env]:-}"
-                    local new_val=","
+                    local new_val="" entry
                     local IFS=','
                     for entry in $current; do
-                        [[ -n "$entry" && "$entry" != "${alias_name}:"* ]] && new_val="${new_val}${entry},"
+                        [[ -n "$entry" && "$entry" != "${alias_name}:"* ]] && new_val+="${entry},"
                     done
-                    new_val="${new_val#,}"
-                    
+
                     __update "ENV_COMMA" "$t_env" "$new_val" "set"
                     __log "Removed '$alias_name' from env '$t_env'." -t success -l comma
                     return 0
@@ -167,23 +161,24 @@ ALIASES:
                     ;;
             esac
         fi
-        
+
         local t_env="$ENV"
         local rest=()
-        
-        while [[ $# -gt 0 ]]; do 
-            case "$1" in 
-                --env|-e) t_env="$2"; shift ;; 
-                *) rest+=("$1") ;;
+
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --env|-e) t_env="$2"; shift ;;
+                --env=*)  t_env="${1#*=}" ;;
+                *)        rest+=("$1") ;;
             esac
             shift
         done
-        
+
         [[ -z "$t_env" ]] && __log "no env was set" -t error -l comma && return 1
-        
+
         local current="${ENV_COMMA[$t_env]:-}"
-        local search_key="" best_key="" best_idx=0
-        
+        local search_key="" best_key="" best_idx=0 i
+
         for ((i=0; i<${#rest[@]}; i++)); do
             if [[ -z "$search_key" ]]; then
                 search_key="${rest[i]}"
@@ -195,23 +190,23 @@ ALIASES:
                 best_idx=$((i + 1))
             fi
         done
-        
+
         if [[ -z "$best_key" ]]; then
             __log "found no registered comma alias for '${rest[0]}' in env '$t_env'." -t error -l comma
             return 1
         fi
-        
+
         local target="$best_key"
         local args=("${rest[@]:best_idx}")
-        
+
         local extract=",${current}"
         extract="${extract##*,${target}:}"
         local entry="${extract%%,*}"
-        
+
         local target_path="${entry%%:*}"
         local exec_cmd="${entry#*:}"
-        
-        eval "$exec_cmd \"$target_path\" \"\${args[@]}\""
+
+        eval "$exec_cmd \"\$target_path\" \"\${args[@]}\""
     }
 
     __comma__.__aliases__() {
@@ -221,7 +216,7 @@ ALIASES:
     }
 
     __comma__.__compl__() {
-        local cur prev base_cmd cmd0
+        local cur prev cmd0
         COMPREPLY=()
         cur="${COMP_WORDS[COMP_CWORD]}"
         prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -233,7 +228,7 @@ ALIASES:
         if [[ "$cmd0" == ",a" ]]; then action="add"; target_start=1; fi
         if [[ "$cmd0" == ",d" ]]; then action="rm"; target_start=1; fi
         if [[ "$cmd0" == "," ]]; then action="--"; target_start=1; fi
-        
+
         if [[ -z "$action" ]]; then
             if [[ ${COMP_CWORD} -eq 1 ]]; then
                 COMPREPLY=( $(compgen -W "set add rm ls --help --" -- "$cur") )
@@ -273,33 +268,33 @@ ALIASES:
             fi
         fi
 
-        local prefix=""
+        local prefix="" i w p
         for ((i=target_start; i<COMP_CWORD; i++)); do
-            local w="${COMP_WORDS[i]}"
+            w="${COMP_WORDS[i]}"
             if [[ "$w" == -* || "$w" == "--env" || "$w" == "-e" || "$w" == "--path" || "$w" == "-p" || "$w" == "--cmd" || "$w" == "-c" ]]; then
                 continue
             fi
-            local p="${COMP_WORDS[i-1]}"
+            p="${COMP_WORDS[i-1]}"
             if [[ "$p" == "--env" || "$p" == "-e" || "$p" == "--path" || "$p" == "-p" || "$p" == "--cmd" || "$p" == "-c" ]]; then
                 continue
             fi
-            
+
             if [[ -z "$prefix" ]]; then
                 prefix="$w"
             else
                 prefix="${prefix}.${w}"
             fi
         done
-        
+
         local current="${ENV_COMMA[$ENV]:-}"
-        local keys=()
+        local keys=() entry
         local OIFS="$IFS"
         IFS=','
         for entry in $current; do
             [[ -n "$entry" ]] && keys+=("${entry%%:*}")
         done
         IFS="$OIFS"
-        
+
         local search_prefix=""
         [[ -n "$prefix" ]] && search_prefix="${prefix}."
         local actual_prefix="$search_prefix"
@@ -309,33 +304,25 @@ ALIASES:
             user_input="${user_input##*.}"
         fi
 
-        local suggestions=()
+        local -A seen_sugg=()
+        local k rem seg
         for k in "${keys[@]}"; do
+            seg=""
             if [[ -z "$actual_prefix" ]]; then
-                if [[ "$k" == *.* ]]; then
-                    suggestions+=("${k%%.*}")
-                else
-                    suggestions+=("$k")
-                fi
-            else
-                if [[ "$k" == "${actual_prefix}"* ]]; then
-                    local rem="${k#$actual_prefix}"
-                    if [[ "$rem" == *.* ]]; then
-                        suggestions+=("${rem%%.*}")
-                    else
-                        suggestions+=("$rem")
-                    fi
-                fi
+                if [[ "$k" == *.* ]]; then seg="${k%%.*}"; else seg="$k"; fi
+            elif [[ "$k" == "${actual_prefix}"* ]]; then
+                rem="${k#$actual_prefix}"
+                if [[ "$rem" == *.* ]]; then seg="${rem%%.*}"; else seg="$rem"; fi
+            fi
+            if [[ -n "$seg" && "$seg" == "$user_input"* ]]; then
+                seen_sugg["$seg"]=1
             fi
         done
 
-        if [[ ${#suggestions[@]} -gt 0 ]]; then
-            local opts=$(printf "%s\n" "${suggestions[@]}" | sort -u)
-            local matches=( $(compgen -W "$opts" -- "$user_input") )
-            
-            local append_prefix=""
+        if (( ${#seen_sugg[@]} > 0 )); then
+            local append_prefix="" m
             [[ "$cur" == *.* ]] && append_prefix="${cur%.*}."
-            for m in "${matches[@]}"; do
+            for m in "${!seen_sugg[@]}"; do
                 COMPREPLY+=("${append_prefix}${m}")
             done
 
@@ -348,10 +335,9 @@ ALIASES:
                     fi
                 done
             fi
-            
             return 0
         fi
-    } 
+    }
 
     __comma__.__init__() {
         __aliases comma

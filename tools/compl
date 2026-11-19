@@ -3,10 +3,10 @@
 __compl__() {
     __declare --dict COMPL
 
-    compl() {
+    function compl() {
         local subcmd="$1"
         shift
-        
+
         case "$subcmd" in
             spec)
                 local target="$1"
@@ -16,12 +16,12 @@ __compl__() {
             build)
                 local target="$1"
                 [[ -z "$target" ]] && __log "compl build requires a target function (e.g., __global)" -t error -l compl && return 1
-                
+
                 local context="${target#__}"
                 local wrapper_name="__compl_wrapper_${context}"
-                
+
                 eval "
-                $wrapper_name() {
+                function $wrapper_name() {
                     __omni_compl_engine \"$context\"
                 }
                 "
@@ -31,7 +31,7 @@ __compl__() {
                 local context="$1"
                 local compl_func="$2"
                 [[ -z "$context" || -z "$compl_func" ]] && __log "compl set requires <context> and <compl_function>" -t error -l compl && return 1
-                
+
                 COMPL["$context"]="$compl_func"
                 complete -o default -o bashdefault -F "$compl_func" "$context"
                 ;;
@@ -39,21 +39,22 @@ __compl__() {
                 local context="$1"
                 shift
                 local t_env="$ENV"
-                
+
                 while [[ $# -gt 0 ]]; do
-                    case "$1" in 
+                    case "$1" in
                         --env=*) t_env="${1#*=}" ;;
-                        --env) t_env="$2"; shift ;; 
+                        --env)   t_env="$2"; shift ;;
                     esac
                     shift
                 done
-                
+
                 [[ -z "$t_env" ]] && __log "no env was set (use --env or export ENV)" -t error -l compl && return 1
-                
+
                 local target_func="__${context}"
                 if declare -f "$target_func" >/dev/null; then
                     compl spec "$target_func"
-                    local wrapper_func="$(compl build "$target_func")"
+                    local wrapper_func
+                    wrapper_func="$(compl build "$target_func")"
                     compl set "$context" "$wrapper_func"
                 else
                     __log "function '$target_func' not found. Cannot build completions." -t error -l compl
@@ -73,37 +74,40 @@ __compl__() {
 
         local suffix="${func_name#__}"
         suffix="${suffix^^}"
-        
+
         __declare --dict "__OPTS_${suffix}" "__FLAGS_${suffix}"
         local -n opts="__OPTS_${suffix}"
         local -n flags="__FLAGS_${suffix}"
-        
-        while IFS= read -r line; do
-            if [[ "$line" =~ ^[[:space:]]*#[[:space:]]*@opt[[:space:]]+([^=]+)=[[:space:]]*(.*) ]]; then
-                local path="${BASH_REMATCH[1]// /}"
-                local val="${BASH_REMATCH[2]}"
+
+        local kind path val
+        while IFS=$'\t' read -r kind path val; do
+            if [[ "$kind" == "opt" ]]; then
                 [[ "$path" == "/" ]] && path=""
                 __omni_compl_spec_nested "$path" "$val" "opts"
-            elif [[ "$line" =~ ^[[:space:]]*#[[:space:]]*@flag[[:space:]]+([^=]+)=[[:space:]]*(.*) ]]; then
-                local path="${BASH_REMATCH[1]// /}"
-                local val="${BASH_REMATCH[2]}"
-                [[ "$path" == "/" ]] && path="/"
+            elif [[ "$kind" == "flag" ]]; then
+                [[ -z "$path" ]] && path="/"
                 flags["$path"]="$val"
             fi
-        done < <(declare -f "$func_name")
+        done < <(declare -f "$func_name" | awk '
+            match($0, /^[[:space:]]*#[[:space:]]*@(opt|flag)[[:space:]]+([^=]+)=[[:space:]]*(.*)/, m) {
+                gsub(/[[:space:]]+/, "", m[2])
+                printf "%s\t%s\t%s\n", m[1], m[2], m[3]
+            }
+        ')
     }
 
     __omni_compl_spec_nested() {
         local path="$1" raw="$2" ref_name="${3:-}"
         [[ -z "$ref_name" ]] && return 1
         local -n opts_ref="$ref_name"
-        
+
         local token="" parent="" inner=""
         local in_parens=0
         local root_key="${path:-/}"
-        
-        for (( i=0; i<${#raw}; i++ )); do
-            local char="${raw:$i:1}"
+        local i len=${#raw} char
+
+        for (( i=0; i<len; i++ )); do
+            char="${raw:$i:1}"
             if [[ "$char" == "(" ]]; then
                 ((in_parens++))
                 if [[ $in_parens == 1 ]]; then
@@ -123,7 +127,7 @@ __compl__() {
                 else
                     inner+="$char"
                 fi
-            elif [[ "$char" =~ [[:space:],] && $in_parens == 0 ]]; then
+            elif [[ ( "$char" == " " || "$char" == $'\t' || "$char" == "," ) && $in_parens == 0 ]]; then
                 if [[ -n "$token" ]]; then
                     opts_ref["$root_key"]+="${opts_ref["$root_key"]:+ }$token"
                     token=""
@@ -141,18 +145,18 @@ __compl__() {
     __omni_compl_engine() {
         local script="$1"
         local cur="${COMP_WORDS[COMP_CWORD]}"
-        
+
         local has_opts=0 has_flags=0
-        if declare -p "__OPTS_${script^^}" >/dev/null 2>&1; then local -n opts="__OPTS_${script^^}"; has_opts=1; 
+        if declare -p "__OPTS_${script^^}" >/dev/null 2>&1; then local -n opts="__OPTS_${script^^}"; has_opts=1;
         elif declare -p "__OPTS_${script}" >/dev/null 2>&1; then local -n opts="__OPTS_${script}"; has_opts=1; fi
-        
-        if declare -p "__FLAGS_${script^^}" >/dev/null 2>&1; then local -n flags="__FLAGS_${script^^}"; has_flags=1; 
+
+        if declare -p "__FLAGS_${script^^}" >/dev/null 2>&1; then local -n flags="__FLAGS_${script^^}"; has_flags=1;
         elif declare -p "__FLAGS_${script}" >/dev/null 2>&1; then local -n flags="__FLAGS_${script}"; has_flags=1; fi
 
-        local path=""
+        local path="" i word
         local context_words=()
         for (( i=1; i < COMP_CWORD; i++ )); do
-            local word="${COMP_WORDS[i]}"
+            word="${COMP_WORDS[i]}"
             context_words+=("$word")
             if [[ "$word" != -* ]]; then
                 if [[ -z "$path" ]]; then path="$word"
@@ -169,22 +173,20 @@ __compl__() {
 
         local custom_compl="__${script}_compl"
         if declare -f "$custom_compl" >/dev/null; then
-            local custom_suggs=$($custom_compl "${context_words[@]}")
+            local custom_suggs
+            custom_suggs="$($custom_compl "${context_words[@]}")"
             suggestions+=" $custom_suggs"
         fi
 
         COMPREPLY=()
+        local -a all_words=()
+        local -A seen=()
         read -ra all_words <<< "$suggestions"
-        
+
         for word in "${all_words[@]}"; do
-            if [[ "$word" == "$cur"* ]]; then
-                local duplicate=0
-                for existing in "${COMPREPLY[@]}"; do
-                    if [[ "$existing" == "$word" ]]; then
-                        duplicate=1; break
-                    fi
-                done
-                (( duplicate == 0 )) && COMPREPLY+=("$word")
+            if [[ "$word" == "$cur"* && -z "${seen[$word]:-}" ]]; then
+                seen["$word"]=1
+                COMPREPLY+=("$word")
             fi
         done
     }

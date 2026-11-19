@@ -12,7 +12,7 @@ FLAGS:
   -h, --help    Show this help""" >&2
     }
 
-    help() {
+    function help() {
         if [[ "$1" == "--help" || "$1" == "-h" ]]; then __help__.__help__; return 0; fi
         local target="$1"
         local method="$2"
@@ -43,31 +43,35 @@ FLAGS:
                 COMPREPLY=( $(compgen -W "--help -h" -- "$cur") )
                 return 0
             fi
-            local funcs="$(compgen -A function)" helps=""
-            for f in $funcs; do
-                if [[ "$f" == __*__.__help__ ]]; then
-                    local name="${f%.__help__}"
-                    name="${name#__}"
-                    name="${name%__}"
-                    if [[ "$name" != *.* ]]; then helps+="$name "; fi
-                elif [[ "$f" == *.__help__ && "$f" != __* ]]; then
-                    local name="${f%.__help__}"
-                    if [[ "$name" != *.* ]]; then helps+="$name "; fi
-                fi
-            done
+            local helps
+            helps=$(declare -F | awk '
+                $3 ~ /\.__help__$/ {
+                    fn = $3
+                    sub(/\.__help__$/, "", fn)
+                    if (fn ~ /^__.*__$/) {
+                        sub(/^__/, "", fn)
+                        sub(/__$/, "", fn)
+                    }
+                    if (fn != "" && index(fn, ".") == 0 && !seen[fn]++) print fn
+                }
+            ')
             COMPREPLY=( $(compgen -W "$helps" -- "$cur") )
             return 0
         elif [[ "${COMP_CWORD}" == 2 ]]; then
-            local funcs="$(compgen -A function)" helps=""
-            for f in $funcs; do
-                if [[ "$f" == "__${prev}__."*.__help__ ]]; then
-                    local name="${f%.__help__}" method="${name#__${prev}__.}"
-                    helps+="$method "
-                elif [[ "$f" == "${prev}."*.__help__ && "$f" != __* ]]; then
-                    local name="${f%.__help__}" method="${name#${prev}.}"
-                    helps+="$method "
-                fi
-            done
+            local helps
+            helps=$(declare -F | awk -v tgt="$prev" '
+                $3 ~ /\.__help__$/ {
+                    fn = $3
+                    sub(/\.__help__$/, "", fn)
+                    if (index(fn, "__" tgt "__.") == 1) {
+                        m = substr(fn, length(tgt) + 6)
+                        if (m != "" && !seen[m]++) print m
+                    } else if (index(fn, tgt ".") == 1) {
+                        m = substr(fn, length(tgt) + 2)
+                        if (m != "" && !seen[m]++) print m
+                    }
+                }
+            ')
             COMPREPLY=( $(compgen -W "$helps" -- "$cur") )
             return 0
         fi

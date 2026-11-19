@@ -50,12 +50,12 @@ INFO:
 
         if [[ "$mode" == "global" ]]; then
             [[ " $__BUILTINS__ " != *" $name "* ]] && __BUILTINS__+=" $name"
-            eval "__omni__.builtins.cmd.$name() { $func \"\$@\"; }"
+            eval "function __omni__.builtins.cmd.$name() { $func \"\$@\"; }"
             alias "$name=__omni__.builtins.cmd.$name"
         else
             local current="${ENV_BUILTINS[$t_env]:-}"
             [[ ",$current," != *",$name,"* ]] && __update "ENV_BUILTINS" "$t_env" "${current}${name}," "set"
-            eval "__omni__.builtins.cmd.$name() { $func \"\$@\"; }"
+            eval "function __omni__.builtins.cmd.$name() { $func \"\$@\"; }"
             alias "$name=__omni__.builtins.cmd.$name"
         fi
     }
@@ -134,20 +134,36 @@ INFO:
         command ls --almost-all --group-directories-first --color=always "$@";
     }
     __omni__.builtins.cmd.lf() {
-        local t="${1:-.}";
-        (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type f ! -name '.*' -printf '%f\0' | xargs -0r ls --group-directories-first --color=always);
+        local t="${1:-.}" f files=()
+        [[ -d "$t" ]] || return 1
+        shopt -s nullglob
+        for f in "$t"/*; do [[ -f "$f" ]] && files+=("${f##*/}"); done
+        shopt -u nullglob
+        (( ${#files[@]} )) && (cd "$t" && command ls -d --group-directories-first --color=always -- "${files[@]}")
     }
     __omni__.builtins.cmd.ld() {
-        local t="${1:-.}";
-        (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' -printf '%f\0' | xargs -0r ls --group-directories-first --color=always);
+        local t="${1:-.}" f dirs=()
+        [[ -d "$t" ]] || return 1
+        shopt -s nullglob
+        for f in "$t"/*; do [[ -d "$f" ]] && dirs+=("${f##*/}"); done
+        shopt -u nullglob
+        (( ${#dirs[@]} )) && (cd "$t" && command ls -d --group-directories-first --color=always -- "${dirs[@]}")
     }
     __omni__.builtins.cmd.laf() {
-        local t="${1:-.}";
-        (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type f -printf '%f\0' | xargs -0r ls --group-directories-first --color=always);
+        local t="${1:-.}" f files=()
+        [[ -d "$t" ]] || return 1
+        shopt -s nullglob dotglob
+        for f in "$t"/*; do [[ -f "$f" ]] && files+=("${f##*/}"); done
+        shopt -u nullglob dotglob
+        (( ${#files[@]} )) && (cd "$t" && command ls -d --group-directories-first --color=always -- "${files[@]}")
     }
     __omni__.builtins.cmd.lad() {
-        local t="${1:-.}";
-        (__omni__.builtins.cmd.cd "$t" || return; find . -maxdepth 1 -mindepth 1 -type d -printf '%f\0' | xargs -0r ls --group-directories-first --color=always);
+        local t="${1:-.}" f dirs=()
+        [[ -d "$t" ]] || return 1
+        shopt -s nullglob dotglob
+        for f in "$t"/*; do [[ -d "$f" ]] && dirs+=("${f##*/}"); done
+        shopt -u nullglob dotglob
+        (( ${#dirs[@]} )) && (cd "$t" && command ls -d --group-directories-first --color=always -- "${dirs[@]}")
     }
     __omni__.builtins.cmd.ln() {
         command ln -sf "$@";
@@ -179,7 +195,7 @@ INFO:
         local dest="${args[-1]}"
         local d="${dest%/*}"
         [[ "$d" == "$dest" ]] && d="."
-        __omni__.builtins.cmd.md "$d"
+        [[ -d "$d" ]] || __omni__.builtins.cmd.md "$d"
         local filtered=()
         for arg in "${args[@]:0:${#args[@]}-1}"; do
             local skip=0
@@ -205,7 +221,7 @@ INFO:
         local dest="${args[-1]}"
         local d="${dest%/*}"
         [[ "$d" == "$dest" ]] && d="."
-        __omni__.builtins.cmd.md "$d"
+        [[ -d "$d" ]] || __omni__.builtins.cmd.md "$d"
         local filtered=()
         for arg in "${args[@]:0:${#args[@]}-1}"; do
             local skip=0
@@ -246,14 +262,14 @@ INFO:
         else
             local t_env="${ENV:-}"
             local trash_conf="${ENV_TRASH[$t_env]:-}"
-            
+
             if [[ ",${trash_conf}" != *",default:"* ]]; then
                 local def_path="${OMNI_TRASH:-${OMNI:-$HOME/.omni}/trash}"
                 local is_def="true"
                 [[ "$trash_conf" == *:true,* ]] && is_def="false"
                 trash_conf="default:${def_path}:30:${is_def},${trash_conf}"
             fi
-            
+
             local t_path="${OMNI_TRASH:-${OMNI:-$HOME/.omni}/trash}"
             local t_expire=30
             if [[ -n "$trash_conf" ]]; then
@@ -273,13 +289,15 @@ INFO:
                     fi
                 done
             fi
-            
-            __omni__.builtins.cmd.md "$t_path"
-            find "$t_path" -mindepth 1 -mtime +$t_expire -delete 2>/dev/null
+
+            [[ -d "$t_path" ]] || __omni__.builtins.cmd.md "$t_path"
+            (find "$t_path" -mindepth 1 -mtime +$t_expire -delete 2>/dev/null &)
+            local ts
+            printf -v ts "%(%s)T" -1
             for f in "${filtered[@]}"; do
                 [[ ! -e "$f" ]] && continue
                 local b="${f##*/}"
-                local u="${b}_$(printf "%(%s)T" -1)_$RANDOM"
+                local u="${b}_${ts}_$RANDOM"
                 command mv "$f" "$t_path/$u"
             done
         fi
@@ -303,7 +321,7 @@ INFO:
             return 0
         fi
         local flags="${__OMNI_BUILTINS_FLAGS[$base_cmd]:-}"
-        
+
         if [[ "$base_cmd" == "cp" || "$base_cmd" == "mv" ]]; then
             flags="--exclude -e"
             [[ "$cur" == -* ]] && COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
@@ -341,7 +359,7 @@ INFO:
             return 0
         fi
     }
-     
+
     __omni__.builtins.__init__() {
         for b in $__BUILTINS__; do
             alias "$b=__omni__.builtins.cmd.$b"

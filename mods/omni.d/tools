@@ -38,47 +38,85 @@ COMMANDS:
             fi
             if [[ -f "$prov_dir/$p/init" ]]; then
                 echo "$prov_dir/$p/init"
-            elif [[ "$p" == "omni" && -f "$(dirname "$__OMNI")/provider/init" ]]; then
-                echo "$(dirname "$__OMNI")/provider/init"
+            elif [[ "$p" == "omni" && -f "${__OMNI%/*}/provider/init" ]]; then
+                echo "${__OMNI%/*}/provider/init"
             fi
         fi
+    }
+
+    _get_provider_meta_cache() {
+        local p="$1" p_init="$2"
+        local prov_dir="${OMNI:-$HOME/.omni}/providers"
+        local cache_file="$prov_dir/$p/.tools.cache"
+        [[ -f "$p_init" ]] || return 1
+
+        if [[ ! -f "$cache_file" || "$p_init" -nt "$cache_file" ]]; then
+            mkdir -p "$prov_dir/$p" 2>/dev/null || true
+            (
+                unset PROVIDER_TOOLS PROVIDER_TOOLS_URL PROVIDER_TOOLS_PATH PROVIDER_TOOLS_DESC
+                declare -A PROVIDER_TOOLS PROVIDER_TOOLS_URL PROVIDER_TOOLS_PATH PROVIDER_TOOLS_DESC
+                source "$p_init" 2>/dev/null || true
+                local -A seen=()
+                local k u path_val pt
+                for k in "${!PROVIDER_TOOLS_URL[@]}" "${!PROVIDER_TOOLS_PATH[@]}" "${!PROVIDER_TOOLS[@]}"; do
+                    [[ -n "${seen[$k]:-}" ]] && continue
+                    seen["$k"]=1
+                    u="${PROVIDER_TOOLS_URL[$k]:-}"
+                    path_val="${PROVIDER_TOOLS_PATH[$k]:-}"
+                    pt="${PROVIDER_TOOLS[$k]:-}"
+                    if [[ -z "$u" && "$pt" == *"url="* ]]; then
+                        u="${pt#*url=}"; u="${u%% *}"; u="${u%%,*}"
+                    elif [[ -z "$u" && "$pt" == *"url:"* ]]; then
+                        u="${pt#*url:}"; u="${u%% *}"; u="${u%%,*}"
+                    fi
+                    if [[ -z "$path_val" && "$pt" == *"path="* ]]; then
+                        path_val="${pt#*path=}"; path_val="${path_val%% *}"; path_val="${path_val%%,*}"
+                    elif [[ -z "$path_val" && "$pt" == *"path:"* ]]; then
+                        path_val="${pt#*path:}"; path_val="${path_val%% *}"; path_val="${path_val%%,*}"
+                    fi
+                    printf '%s\t%s\t%s\n' "$k" "$u" "$path_val"
+                done
+            ) > "${cache_file}.tmp" && mv "${cache_file}.tmp" "$cache_file"
+        fi
+        echo "$cache_file"
     }
 
     _get_provider_tools() {
         local p="$1"
         if [[ "$p" == "builtins" ]]; then
             if [[ -d "$__OMNI_TOOLS" ]]; then
+                local f bname
+                shopt -s nullglob
                 for f in "$__OMNI_TOOLS"/*; do
-                    local bname="${f##*/}"
+                    bname="${f##*/}"
                     if [[ -f "$f" || -f "$f/init" || -f "$f/$bname" ]]; then
                         echo "$bname"
                     fi
                 done
+                shopt -u nullglob
             fi
             return 0
         fi
 
-        local p_init="$(_get_provider_init "$p")"
+        local p_init
+        p_init="$(_get_provider_init "$p")"
         if [[ -f "$p_init" ]]; then
-            (
-                unset PROVIDER_TOOLS PROVIDER_TOOLS_URL PROVIDER_TOOLS_PATH PROVIDER_TOOLS_DESC
-                declare -A PROVIDER_TOOLS PROVIDER_TOOLS_URL PROVIDER_TOOLS_PATH PROVIDER_TOOLS_DESC
-                source "$p_init" 2>/dev/null || true
-                local -A seen=()
-                for k in "${!PROVIDER_TOOLS_URL[@]}"; do seen["$k"]=1; echo "$k"; done
-                for k in "${!PROVIDER_TOOLS_PATH[@]}"; do [[ -z "${seen[$k]:-}" ]] && seen["$k"]=1 && echo "$k"; done
-                for k in "${!PROVIDER_TOOLS[@]}"; do [[ -z "${seen[$k]:-}" ]] && seen["$k"]=1 && echo "$k"; done
-            )
+            local cache_file
+            cache_file="$(_get_provider_meta_cache "$p" "$p_init")"
+            [[ -f "$cache_file" ]] && awk -F'\t' '{ print $1 }' "$cache_file"
         fi
 
         local prov_dir="${OMNI:-$HOME/.omni}/providers"
         if [[ -d "$prov_dir/$p/tools" ]]; then
+            local f bname
+            shopt -s nullglob
             for f in "$prov_dir/$p/tools"/*; do
-                local bname="${f##*/}"
+                bname="${f##*/}"
                 if [[ -f "$f/init" || -f "$f/$bname" || -f "$f" ]]; then
                     echo "$bname"
                 fi
             done
+            shopt -u nullglob
         fi
     }
 
@@ -116,41 +154,25 @@ COMMANDS:
 
         local prov_root=""
         if [[ -f "$prov_dir/$t_prov/.origin" ]]; then
-            prov_root="$(cat "$prov_dir/$t_prov/.origin")"
+            prov_root="$(<"$prov_dir/$t_prov/.origin")"
         else
-            prov_root="$(dirname "$p_init")"
+            prov_root="${p_init%/*}"
+            [[ "$prov_root" == "$p_init" ]] && prov_root="."
         fi
 
-        local meta
-        meta=$(
-            unset PROVIDER_TOOLS PROVIDER_TOOLS_URL PROVIDER_TOOLS_PATH PROVIDER_TOOLS_DESC
-            declare -A PROVIDER_TOOLS PROVIDER_TOOLS_URL PROVIDER_TOOLS_PATH PROVIDER_TOOLS_DESC
-            source "$p_init" 2>/dev/null || true
-            local u="${PROVIDER_TOOLS_URL[$t_name]:-}"
-            local p="${PROVIDER_TOOLS_PATH[$t_name]:-}"
-            local pt="${PROVIDER_TOOLS[$t_name]:-}"
-            if [[ -z "$u" && "$pt" == *"url="* ]]; then
-                u="${pt#*url=}"; u="${u%% *}"; u="${u%%,*}"
-            elif [[ -z "$u" && "$pt" == *"url:"* ]]; then
-                u="${pt#*url:}"; u="${u%% *}"; u="${u%%,*}"
-            fi
-            if [[ -z "$p" && "$pt" == *"path="* ]]; then
-                p="${pt#*path=}"; p="${p%% *}"; p="${p%%,*}"
-            elif [[ -z "$p" && "$pt" == *"path:"* ]]; then
-                p="${pt#*path:}"; p="${p%% *}"; p="${p%%,*}"
-            fi
-            echo "T_URL='$u'"
-            echo "T_PATH='$p'"
-        )
-        eval "$meta"
+        local cache_file T_URL="" T_PATH=""
+        cache_file="$(_get_provider_meta_cache "$t_prov" "$p_init")"
+        if [[ -f "$cache_file" ]]; then
+            IFS=$'\t' read -r _ T_URL T_PATH < <(awk -F'\t' -v t="$t_name" '$1 == t { print $0; exit }' "$cache_file")
+        fi
 
         if [[ -n "$T_URL" ]]; then
             local tool_dest="$tools_cache/$t_name"
             mkdir -p "$tools_cache"
             if [[ ! -d "$tool_dest" ]]; then
                 GIT_TERMINAL_PROMPT=0 git clone --depth 1 "$T_URL" "$tool_dest" >/dev/null 2>&1
-                if [[ ! -d "$tool_dest" && -d "$(dirname "$__OMNI")/$t_name" ]]; then
-                    cp -r "$(dirname "$__OMNI")/$t_name" "$tool_dest"
+                if [[ ! -d "$tool_dest" && -d "${__OMNI%/*}/$t_name" ]]; then
+                    cp -r "${__OMNI%/*}/$t_name" "$tool_dest"
                 fi
             fi
             if [[ -d "$tool_dest" && ( -f "$tool_dest/init" || -f "$tool_dest/$t_name" ) ]]; then
@@ -176,11 +198,11 @@ COMMANDS:
             ln -sfn "$prov_root/tools/$t_name" "$prov_dir/$t_prov/tools/$t_name"
             echo "$prov_root/tools/$t_name"
             return 0
-        elif [[ -d "$(dirname "$__OMNI")/$t_name" ]]; then
+        elif [[ -d "${__OMNI%/*}/$t_name" ]]; then
             local tool_dest="$tools_cache/$t_name"
             mkdir -p "$tools_cache"
             if [[ ! -d "$tool_dest" ]]; then
-                cp -r "$(dirname "$__OMNI")/$t_name" "$tool_dest"
+                cp -r "${__OMNI%/*}/$t_name" "$tool_dest"
             fi
             mkdir -p "$prov_dir/$t_prov/tools" 2>/dev/null || true
             ln -sfn "$tool_dest" "$prov_dir/$t_prov/tools/$t_name"
@@ -203,7 +225,7 @@ COMMANDS:
             esac
             shift
         done
-        
+
         if [[ -n "$t_env" ]]; then
             local current="${ENV_TOOLS[$t_env]:-}"
             local OIFS="$IFS"
@@ -239,12 +261,15 @@ COMMANDS:
             done
         elif (( is_all )); then
             if [[ -d "$__OMNI_TOOLS" ]]; then
+                local f bname
+                shopt -s nullglob
                 for f in "$__OMNI_TOOLS"/*; do
-                    local bname="${f##*/}"
+                    bname="${f##*/}"
                     if [[ -f "$f" || -f "$f/init" || -f "$f/$bname" ]]; then
                         echo "builtins: $bname"
                     fi
                 done
+                shopt -u nullglob
             fi
             local -A seen_provs=()
             for p in "${!PROVIDERS_LOCAL[@]}" "${!PROVIDERS_REMOTE[@]}"; do
@@ -281,27 +306,30 @@ COMMANDS:
         done
         [[ -z "$t_env" ]] && { echo "error: no env was set" >&2; return 1; }
 
-        # Mode 1: Use direct local tool by path
         if [[ -n "$t_path" ]]; then
             if [[ ! -e "$t_path" ]]; then
                 echo "error: tool path not found: '$t_path'" >&2
                 return 1
             fi
-            t_path="$(cd "$(dirname "$t_path")" 2>/dev/null && pwd)/$(basename "$t_path")"
+            local p_dir="${t_path%/*}"
+            [[ "$p_dir" == "$t_path" ]] && p_dir="."
+            [[ "$p_dir" != /* ]] && p_dir="$(cd "$p_dir" 2>/dev/null && pwd)"
+            t_path="${p_dir}/${t_path##*/}"
+
             if [[ -d "$t_path" ]]; then
                 if [[ -z "$t_name" ]]; then
-                    t_name="$(basename "$t_path")"
+                    t_name="${t_path##*/}"
                 fi
                 if [[ ! -f "$t_path/init" && ! -f "$t_path/$t_name" ]]; then
                     echo "error: no tool entrypoint (init) found in '$t_path'" >&2
                     return 1
                 fi
             elif [[ -f "$t_path" ]]; then
-                local bname="$(basename "$t_path")"
-                local dname="$(dirname "$t_path")"
+                local bname="${t_path##*/}"
+                local dname="${t_path%/*}"
                 if [[ -z "$t_name" ]]; then
                     if [[ "$bname" == "init" ]]; then
-                        t_name="$(basename "$dname")"
+                        t_name="${dname##*/}"
                     else
                         t_name="$bname"
                     fi
@@ -320,16 +348,15 @@ COMMANDS:
                 if [[ -d "$t_path" ]]; then
                     __load tool "$t_name" --from "$t_path" -l
                 else
-                    __load file "$(basename "$t_path")" --from "$(dirname "$t_path")" -l
-                    if [[ "$(basename "$t_path")" != "$t_name" ]]; then
-                        eval "${t_name}() { $(basename "$t_path") \"\$@\"; }"
+                    __load file "${t_path##*/}" --from "${t_path%/*}" -l
+                    if [[ "${t_path##*/}" != "$t_name" ]]; then
+                        eval "function ${t_name}() { ${t_path##*/} \"\$@\"; }"
                     fi
                 fi
             fi
             return 0
         fi
 
-        # Mode 2: Use direct tool by repository URL
         if [[ -n "$t_url" ]]; then
             if [[ -z "$t_name" ]]; then
                 local bname="${t_url##*/}"
@@ -342,8 +369,8 @@ COMMANDS:
             if [[ ! -d "$tool_dest" ]]; then
                 echo "Cloning tool '$t_name' from '$t_url'..." >&2
                 GIT_TERMINAL_PROMPT=0 git clone --depth 1 "$t_url" "$tool_dest" >/dev/null 2>&1
-                if [[ ! -d "$tool_dest" && -d "$(dirname "$__OMNI")/$t_name" ]]; then
-                    cp -r "$(dirname "$__OMNI")/$t_name" "$tool_dest"
+                if [[ ! -d "$tool_dest" && -d "${__OMNI%/*}/$t_name" ]]; then
+                    cp -r "${__OMNI%/*}/$t_name" "$tool_dest"
                 fi
             fi
             if [[ ! -d "$tool_dest" || ( ! -f "$tool_dest/init" && ! -f "$tool_dest/$t_name" ) ]]; then
@@ -365,7 +392,6 @@ COMMANDS:
             return 0
         fi
 
-        # Mode 3: Provider-based tool
         [[ -z "$t_name" ]] && { echo "error: <tool> is mandatory" >&2; return 1; }
         if [[ -z "$t_prov" ]]; then
             if [[ -f "$__OMNI_TOOLS/$t_name" || -f "$__OMNI_TOOLS/$t_name/init" ]]; then
@@ -458,36 +484,22 @@ COMMANDS:
             return 1
         fi
 
-        # Ensure provider is installed/synced so its init metadata and repo are up-to-date
+        if ! declare -f __omni__.providers.sync >/dev/null 2>&1; then
+            source "$__OMNI_MODS/omni.d/providers" 2>/dev/null && __omni.providers__ 2>/dev/null && unset -f __omni.providers__ 2>/dev/null || true
+        fi
         if declare -f __omni__.providers.sync >/dev/null 2>&1; then
             __omni__.providers.sync "$t_prov" >/dev/null 2>&1 || true
         fi
 
+        rm -f "$prov_dir/$t_prov/.tools.cache" 2>/dev/null || true
         local p_init="$(_get_provider_init "$t_prov")"
         local T_URL="" T_PATH=""
         if [[ -n "$p_init" && -f "$p_init" ]]; then
-            local meta
-            meta=$(
-                unset PROVIDER_TOOLS PROVIDER_TOOLS_URL PROVIDER_TOOLS_PATH PROVIDER_TOOLS_DESC
-                declare -A PROVIDER_TOOLS PROVIDER_TOOLS_URL PROVIDER_TOOLS_PATH PROVIDER_TOOLS_DESC
-                source "$p_init" 2>/dev/null || true
-                local u="${PROVIDER_TOOLS_URL[$t_name]:-}"
-                local p="${PROVIDER_TOOLS_PATH[$t_name]:-}"
-                local pt="${PROVIDER_TOOLS[$t_name]:-}"
-                if [[ -z "$u" && "$pt" == *"url="* ]]; then
-                    u="${pt#*url=}"; u="${u%% *}"; u="${u%%,*}"
-                elif [[ -z "$u" && "$pt" == *"url:"* ]]; then
-                    u="${pt#*url:}"; u="${u%% *}"; u="${u%%,*}"
-                fi
-                if [[ -z "$p" && "$pt" == *"path="* ]]; then
-                    p="${pt#*path=}"; p="${p%% *}"; p="${p%%,*}"
-                elif [[ -z "$p" && "$pt" == *"path:"* ]]; then
-                    p="${pt#*path:}"; p="${p%% *}"; p="${p%%,*}"
-                fi
-                echo "T_URL='$u'"
-                echo "T_PATH='$p'"
-            )
-            eval "$meta"
+            local cache_file
+            cache_file="$(_get_provider_meta_cache "$t_prov" "$p_init")"
+            if [[ -f "$cache_file" ]]; then
+                IFS=$'\t' read -r _ T_URL T_PATH < <(awk -F'\t' -v t="$t_name" '$1 == t { print $0; exit }' "$cache_file")
+            fi
         fi
 
         local tool_dest="$tools_cache/$t_name"
@@ -498,8 +510,8 @@ COMMANDS:
             else
                 rm -rf "$tool_dest"
                 GIT_TERMINAL_PROMPT=0 git clone --depth 1 "$T_URL" "$tool_dest" >/dev/null 2>&1 || true
-                if [[ ! -d "$tool_dest" && -d "$(dirname "$__OMNI")/$t_name" ]]; then
-                    cp -r "$(dirname "$__OMNI")/$t_name" "$tool_dest"
+                if [[ ! -d "$tool_dest" && -d "${__OMNI%/*}/$t_name" ]]; then
+                    cp -r "${__OMNI%/*}/$t_name" "$tool_dest"
                 fi
             fi
             if [[ -d "$tool_dest" ]]; then
@@ -510,8 +522,8 @@ COMMANDS:
             git -C "$tool_dest" pull >/dev/null 2>&1 || true
         elif [[ -d "$prov_dir/$t_prov/tools/$t_name/.git" ]]; then
             git -C "$prov_dir/$t_prov/tools/$t_name" pull >/dev/null 2>&1 || true
-        elif [[ -d "$tool_dest" && -d "$(dirname "$__OMNI")/$t_name" ]]; then
-            cp -r "$(dirname "$__OMNI")/$t_name"/* "$tool_dest/" 2>/dev/null || true
+        elif [[ -d "$tool_dest" && -d "${__OMNI%/*}/$t_name" ]]; then
+            cp -r "${__OMNI%/*}/$t_name"/* "$tool_dest/" 2>/dev/null || true
         fi
 
         local tool_load_dir="$(_resolve_provider_tool "$t_prov" "$t_name")"
@@ -520,7 +532,6 @@ COMMANDS:
             return 1
         fi
 
-        # If the tool is currently active in the current environment, refresh its lazy loader
         local active="${ENV_TOOLS[${ENV:-}]:-}"
         if [[ ",${active}," == *",${t_prov}@@${t_name},"* || ",${active}," == *",${t_name},"* ]]; then
             __load tool "$t_name" --from "$tool_load_dir" -l
@@ -623,22 +634,22 @@ COMMANDS:
 
     __omni__.tools.__compl__() {
         local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}" base_cmd="${COMP_WORDS[1]:-}"
-        
-        if [[ "${COMP_CWORD}" == 1 ]]; then 
+
+        if [[ "${COMP_CWORD}" == 1 ]]; then
             COMPREPLY=( $(compgen -W "ls use sync rm call --help -h" -- "$cur") )
             return 0
         fi
-        
+
         if [[ "$prev" == "-e" || "$prev" == "--env" ]]; then
             COMPREPLY=( $(compgen -W "${!ENVS[*]}" -- "$cur") )
             return 0
         fi
-        
+
         if [[ "$prev" == "-p" || "$prev" == "--provider" || "$prev" == "-P" ]]; then
             COMPREPLY=( $(compgen -W "builtins ${!PROVIDERS_LOCAL[*]} ${!PROVIDERS_REMOTE[*]}" -- "$cur") )
             return 0
         fi
-        
+
         local t_prov=""
         for ((i=1; i<COMP_CWORD; i++)); do
             if [[ "${COMP_WORDS[i]}" == "-P" || "${COMP_WORDS[i]}" == "--provider" ]]; then
@@ -653,7 +664,7 @@ COMMANDS:
             fi
         done
         [[ -z "$t_prov" ]] && t_prov="builtins"
-        
+
         _list_active_tools() {
             local e="${ENV:-}" p="$1"
             local current="${ENV_TOOLS[$e]:-}"
@@ -669,11 +680,11 @@ COMMANDS:
                 fi
             done
         }
-        
+
         _is_flag_value() {
             [[ "$prev" == "-e" || "$prev" == "--env" || "$prev" == "-p" || "$prev" == "--provider" || "$prev" == "-P" || "$prev" == "--path" || "$prev" == "-u" || "$prev" == "--url" ]]
         }
-        
+
         if [[ "$base_cmd" == "call" ]]; then
             local t_name="" tool_idx=-1
             for ((i=2; i<=COMP_CWORD; i++)); do
@@ -687,7 +698,7 @@ COMMANDS:
             done
             if [[ -n "$t_name" && $COMP_CWORD -gt $tool_idx ]]; then
                 local tool_dir="$(_resolve_provider_tool "$t_prov" "$t_name")"
-                
+
                 if ! declare -f "${t_name}.__compl__" >/dev/null 2>&1; then
                     if [[ -n "$tool_dir" && ( -f "$tool_dir/$t_name/init" || -f "$tool_dir/init" || -f "$tool_dir/$t_name" ) ]]; then
                         __load tool "$t_name" --from "$tool_dir" >/dev/null 2>&1
@@ -705,7 +716,7 @@ COMMANDS:
                 return 0
             fi
         fi
-        
+
         case "$base_cmd" in
             ls)
                 if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "-e --env -p --provider -a --all" -- "$cur") ); fi ;;

@@ -5,13 +5,13 @@ __import__() {
     __import__.__help__() {
         echo """ABOUT
     the omni context import system
-USAGE: 
+USAGE:
     import <ctx> [of <prov>] | import <attr> from <ctx> [in <prov>]
 FLAGS:
   -h, --help    Show this help""" >&2
     }
 
-    import() {
+    function import() {
         if [[ "$1" == "--help" || "$1" == "-h" ]]; then __import__.__help__; return 0; fi
         local target="" context="" provider=""
 
@@ -53,7 +53,7 @@ FLAGS:
             fi
         else
             dest="$__OMNI_TOOLS/$context"
-            
+
             if [[ ! -f "$dest" ]]; then
                 local p_data=""
                 if [[ -n "$caller" ]]; then
@@ -65,39 +65,45 @@ FLAGS:
                 fi
 
                 [[ -z "$p_data" ]] && p_data="${PROVIDERS[$provider]:-}"
-                
+
                 if [[ -z "$p_data" ]]; then
                     __log "Provider '$provider' not found." -t error -l import
                     return 1
                 fi
 
-                local p_url=$(echo "$p_data" | grep -o 'url:[^,]*' | cut -d: -f2- | tr -d '\n')
-                local p_path=$(echo "$p_data" | grep -o 'path:[^,]*' | cut -d: -f2- | tr -d '\n')
+                local p_url="" p_path=""
+                if [[ ",${p_data}," == *",url:"* ]]; then
+                    p_url="${p_data#*url:}"
+                    p_url="${p_url%%,*}"
+                fi
+                if [[ ",${p_data}," == *",path:"* ]]; then
+                    p_path="${p_data#*path:}"
+                    p_path="${p_path%%,*}"
+                fi
 
                 if [[ -z "$p_url" ]]; then
-                    local full_path="$p_path/$context"
-                    full_path=$(echo "$full_path" | sed -E 's|//+|/|g')
+                    local full_path="${p_path%/}/$context"
+                    while [[ "$full_path" == *"//"* ]]; do full_path="${full_path//\/\//\/}"; done
                     if [[ -f "$full_path" ]]; then ln -sf "$full_path" "$dest"
                     else __log "Local tool not found at '$full_path'" -t error -l import; return 1; fi
                 else
-                    local full_url="$p_url"
-                    [[ -n "$p_path" ]] && full_url="${full_url%/}/$p_path"
+                    local full_url="${p_url%/}"
+                    [[ -n "$p_path" ]] && full_url="${full_url}/${p_path#/}"
                     full_url="${full_url%/}/$context"
-                
-                    full_url=$(echo "$full_url" | sed -E 's|([^:])//+|\1/|g')
 
                     if [[ "$full_url" == *github.com* ]]; then
                         local without_proto="${full_url#*://}"
+                        local -a parts=()
                         IFS='/' read -ra parts <<< "$without_proto"
                         if [[ "${parts[0]}" == "github.com" ]]; then
                             local user="${parts[1]}"
                             local repo="${parts[2]}"
-                            local file_path=""
-                            for ((i=3; i<${#parts[@]}; i++)); do file_path="${file_path}/${parts[i]}"; done
+                            local file_path="" i
+                            for ((i=3; i<${#parts[@]}; i++)); do file_path+="/${parts[i]}"; done
                             full_url="https://raw.githubusercontent.com/${user}/${repo}/main/${file_path#/}"
                         fi
                     fi
-                    
+
                     __log "Fetching dependency '$context'..." -t info -l import
                     if curl -fsSL "$full_url" -o "$dest"; then chmod +x "$dest"
                     else __log "Failed to fetch '$context'" -t error -l import; rm -f "$dest"; return 1; fi
@@ -118,24 +124,25 @@ FLAGS:
         if [[ "$target" == "*" || "$target" == "$context" ]]; then return 0; fi
 
         local ctx_attrs=",${CONTEXTS[$context]:-},"
+        local attr
 
         if [[ "$target" == *".*" ]]; then
             local namespace="${target%.*}"
             local matched=0
             for attr in ${CONTEXTS[$context]//,/ }; do
                 if [[ "$attr" == "${namespace}."* ]]; then
-                    eval "${attr}() { ${context}.${attr} \"\$@\"; }"
+                    eval "function ${attr}() { ${context}.${attr} \"\$@\"; }"
                     matched=1
                 fi
             done
             [[ $matched == 0 ]] && __log "No attributes matching '${namespace}.*' found in '$context'." -t error -l import
         else
             if [[ "$ctx_attrs" == *",${target},"* ]]; then
-                eval "${target}() { ${context}.${target} \"\$@\"; }"
-                
+                eval "function ${target}() { ${context}.${target} \"\$@\"; }"
+
                 for attr in ${CONTEXTS[$context]//,/ }; do
                     if [[ "$attr" == "${target}."* ]]; then
-                        eval "${attr}() { ${context}.${attr} \"\$@\"; }"
+                        eval "function ${attr}() { ${context}.${attr} \"\$@\"; }"
                     fi
                 done
             else
@@ -146,18 +153,18 @@ FLAGS:
     }
 
     __import__.__compl__() {
-        local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
+        local cur="${COMP_WORDS[COMP_CWORD]}"
         COMPREPLY=()
-        if [[ "${COMP_CWORD}" == 1 ]]; then 
+        if [[ "${COMP_CWORD}" == 1 ]]; then
             [[ "$cur" == -* ]] && COMPREPLY=( $(compgen -W "--help -h" -- "$cur") )
             return 0
         fi
         if [[ "${COMP_CWORD}" == 2 ]]; then COMPREPLY=( $(compgen -W "of from" -- "$cur") ); return 0; fi
-        if [[ "${COMP_WORDS[2]}" == "of" && "${COMP_CWORD}" == 3 ]]; then 
+        if [[ "${COMP_WORDS[2]}" == "of" && "${COMP_CWORD}" == 3 ]]; then
             COMPREPLY=( $(compgen -W "${!PROVIDERS[*]}" -- "$cur") )
             return 0
         fi
-        if [[ "${COMP_WORDS[2]}" == "from" && "${COMP_CWORD}" == 4 ]]; then 
+        if [[ "${COMP_WORDS[2]}" == "from" && "${COMP_CWORD}" == 4 ]]; then
             COMPREPLY=( $(compgen -W "in of" -- "$cur") )
             return 0
         fi

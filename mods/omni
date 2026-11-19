@@ -20,7 +20,7 @@ COMMANDS:
     trash
 INFO:     for custom help, try 'omni <command> --help'""" >&2
     }
-    
+
     __omni__.init() {
         while [[ $# -gt 0 ]]; do
             case "$1" in
@@ -32,7 +32,7 @@ INFO:     for custom help, try 'omni <command> --help'""" >&2
         local rcfile="${OMNIRC:-$HOME/.omnirc}"
         export OMNIRC="$rcfile"
         if [[ ! -f "$rcfile" ]]; then
-            touch "$rcfile" 2>/dev/null
+            : > "$rcfile" 2>/dev/null
         fi
         if [[ -f "$rcfile" ]]; then
             source "$rcfile"
@@ -72,7 +72,7 @@ COMMANDS:
             shift
         done
         [[ -z "$t_name" || -z "$t_path" || -z "$t_env" ]] && return 1
-        
+
         local current="${ENV_TRASH[$t_env]:-}"
         local new_val=","
         local IFS=','
@@ -86,7 +86,7 @@ COMMANDS:
         done
         new_val="${new_val#,}${t_name}:${t_path}:${t_expire}:${t_def},"
         __update "ENV_TRASH" "$t_env" "$new_val" "set"
-        mkdir -p "$t_path" 2>/dev/null
+        [[ -d "$t_path" ]] || mkdir -p "$t_path" 2>/dev/null
     }
 
     __omni__.trash.clean() {
@@ -99,13 +99,13 @@ COMMANDS:
             esac
             shift
         done
-        
+
         local current="${ENV_TRASH[$t_env]:-}"
         if [[ ",${current}" != *",default:"* ]]; then
             local def_path="${OMNI_TRASH:-${OMNI:-$HOME/.omni}/trash}"
             current="default:${def_path}:30:true,${current}"
         fi
-        
+
         local IFS=','
         for entry in $current; do
             if [[ "${entry%%:*}" == "$t_name" ]]; then
@@ -127,7 +127,7 @@ COMMANDS:
             esac
             shift
         done
-        
+
         if (( is_all )); then
             for e in "${ENVS[@]}"; do
                 local current="${ENV_TRASH[$e]:-}"
@@ -168,7 +168,7 @@ COMMANDS:
             esac
             shift
         done
-        
+
         local current="${ENV_TRASH[$t_env]:-}"
         local implicit=0
         if [[ ",${current}" != *",default:"* ]]; then
@@ -176,7 +176,7 @@ COMMANDS:
             current="${current}default:${def_path}:30:true,"
             implicit=1
         fi
-        
+
         local new_val=","
         local IFS=','
         for entry in $current; do
@@ -214,7 +214,7 @@ COMMANDS:
         esac
     }
 
-    omni() {
+    function omni() {
         case "$1" in
             -c|--conf)
                 (
@@ -256,31 +256,31 @@ COMMANDS:
                 __omni__.init "$@"
                 ;;
             builtins)
-                declare -f __omni__.builtins >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/builtins" && __omni.builtins__; }
+                declare -f __omni__.builtins >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/builtins" && __omni.builtins__ && unset -f __omni.builtins__; }
                 __omni__.builtins "$@"
                 ;;
             envs)
-                declare -f __omni__.envs >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/envs" && __omni.envs__; }
+                declare -f __omni__.envs >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/envs" && __omni.envs__ && unset -f __omni.envs__; }
                 __omni__.envs "$@"
                 ;;
             tools)
-                declare -f __omni__.tools >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/tools" && __omni.tools__; }
+                declare -f __omni__.tools >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/tools" && __omni.tools__ && unset -f __omni.tools__; }
                 __omni__.tools "$@"
                 ;;
             providers)
-                declare -f __omni__.providers >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/providers" && __omni.providers__; }
+                declare -f __omni__.providers >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/providers" && __omni.providers__ && unset -f __omni.providers__; }
                 __omni__.providers "$@"
                 ;;
             contexts)
-                declare -f __omni__.contexts >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/contexts" && __omni.contexts__; }
+                declare -f __omni__.contexts >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/contexts" && __omni.contexts__ && unset -f __omni.contexts__; }
                 __omni__.contexts "$@"
                 ;;
             run)
-                declare -f __omni__.run >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/run" && __omni.run__; }
+                declare -f __omni__.run >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/run" && __omni.run__ && unset -f __omni.run__; }
                 __omni__.run "$@"
                 ;;
             ssh)
-                declare -f __omni__.ssh >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/ssh" && __omni.ssh__; }
+                declare -f __omni__.ssh >/dev/null 2>&1 || { source "$__OMNI_MODS/omni.d/ssh" && __omni.ssh__ && unset -f __omni.ssh__; }
                 __omni__.ssh "$@"
                 ;;
             trash)
@@ -372,6 +372,7 @@ COMMANDS:
             if ! declare -f "${__compl__}" >/dev/null 2>&1; then
                 source "$__OMNI_MODS/omni.d/$cmd" 2>/dev/null
                 "__omni.${cmd}__" 2>/dev/null || true
+                unset -f "__omni.${cmd}__" 2>/dev/null || true
                 "${__cmd__}.__init__" 2>/dev/null || true
             fi
 
@@ -388,19 +389,6 @@ COMMANDS:
     }
 
     __omni__.__init__() {
-        local scripts=("$__OMNI_MODS/omni.d/*")
-        local script name
-
-        for script in ${scripts[@]}; do
-            source "$script"
-            name="$(basename "$script")"
-
-            if declare -f "__omni.${name}__" > /dev/null 2>&1; then
-                "__omni.${name}__" >/dev/null 2>&1
-                unset -f "__omni.${name}__"
-            fi
-        done
-
         complete -o default -o bashdefault -F __omni__.__compl__ omni
     }
 
